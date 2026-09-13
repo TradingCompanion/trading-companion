@@ -1,6 +1,7 @@
-# Desktop Pet — Yui ($YUI)
+# Trading Companion
 
-Yui is an anime-style 3D girl who lives on your desktop. She stands on top of the taskbar,
+Trading Companion is a desktop pet for traders. Yui, an anime-style 3D girl, lives on your desktop
+and reacts to your trades. She stands on top of the taskbar,
 breathes, blinks, watches your cursor, wanders around, and can be picked up and
 thrown with the mouse. Everywhere except her body is click-through, so she never
 gets in the way.
