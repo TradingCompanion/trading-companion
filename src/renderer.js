@@ -223,7 +223,7 @@ async function loadModel(buffer, name) {
     // proportions are always measured from the skeleton as its author left it
     const rest = { hipY: rawBones.hips ? rawBones.hips.position.y : 0, height, hipH };
     model = { vrm, root, bones, rawBones, rest, height, hipH, comY: height * 0.55, name, sign: isVRM0 ? -1 : 1, joints, gravityScale: 1, outlinePairs, mats: collectMaterials(vrm.scene) };
-    fxApplied = false; canvas.style.filter = lastFilter = ''; pet.wounds = []; sparks.length = 0;
+    fxApplied = false; canvas.style.filter = lastFilter = ''; pet.wounds = []; sparks.length = 0; woundTexKey = '';
     disposeSign();
     // figure: VRoid-style bust bones (J_Sec_*_Bust1 -> Bust2) carry the chest vertices and have their own spring group
     const bustNodes = [];
@@ -520,7 +520,7 @@ function handleRelay(m) {
 }
 function refreshRelayStatus() {
   const sub = panelEl && panelEl.querySelector('.hd .sub');
-  if (sub) sub.textContent = relayStatus === 'ok' ? 'connected' : relayStatus === 'err' ? 'not connected' : 'settings';
+  if (sub) { sub.textContent = relayStatus === 'ok' ? 'connected' : relayStatus === 'err' ? 'not connected' : 'settings'; sub.classList.toggle('live', relayStatus === 'ok'); }
   const el = panelEl && panelEl.querySelector('#relayStatus');
   if (el) { el.textContent = relayInfo; el.className = 'status ' + (relayStatus === 'ok' ? 'ok' : relayStatus === 'err' ? 'err' : ''); }
   const b = panelEl && panelEl.querySelector('#btnConnect');
@@ -612,6 +612,10 @@ const SOUND_EVENTS = [
 ];
 const signed = (v) => { const n = Math.round(((v ?? 0.5) - 0.5) * 200); return (n > 0 ? '+' : '') + n + '%'; };
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+// A slider's label carries its live value on the right; `readout` updates just that part while dragging.
+const lab = (name, value) => `<label><span>${name}</span><b>${value}</b></label>`;
+const readout = (input, value) => { const b = input.previousElementSibling && input.previousElementSibling.querySelector('b'); if (b) b.textContent = value; };
+const pct = (v) => Math.round(v * 100) + '%';
 function soundOptions(sel) {
   let h = '<option value=""' + (!sel ? ' selected' : '') + '>(silent)</option>';
   const files = cfg?.soundFiles || [];
@@ -646,21 +650,21 @@ function renderPanel() {
         <div class="f"><label>Model</label><div class="btnrow"><button class="ghost" id="btnModel">Load VRM</button><button class="ghost icon fix" id="btnDefaultModel" title="Back to the bundled model">↺</button></div></div></div>
       <label class="sw"><input type="checkbox" id="fTop"${c.alwaysOnTop ? ' checked' : ''}>Always on top</label>
       <div class="sep"></div>
-      <div class="row"><div class="f"><label>Volume ${Math.round((c.volume ?? 0.6) * 100)}%</label><input type="range" id="fVol" min="0" max="1" step="0.02" value="${c.volume ?? 0.6}"></div>
-        <div class="f"><label>Pitch ${(c.pitch ?? 1).toFixed(2)}×</label><input type="range" id="fPitch" min="0.75" max="1.35" step="0.01" value="${c.pitch ?? 1}"></div></div>
+      <div class="row"><div class="f">${lab('Volume', pct(c.volume ?? 0.6))}<input type="range" id="fVol" min="0" max="1" step="0.02" value="${c.volume ?? 0.6}"></div>
+        <div class="f">${lab('Pitch', (c.pitch ?? 1).toFixed(2) + '×')}<input type="range" id="fPitch" min="0.75" max="1.35" step="0.01" value="${c.pitch ?? 1}"></div></div>
       <div class="row"><label class="sw mini" style="flex:1"><input type="checkbox" id="fMute"${c.muted ? ' checked' : ''}>Mute</label>
         <button class="ghost fix" id="btnVoiceTest">Test voice</button></div>
     </div>
 
     <div class="pg" data-pg="look"${pg('look')}>
-      <div class="row"><div class="f"><label>Bust ${Math.round((c.bust ?? FIG.bust) * 100)}%</label><input type="range" id="fBust" min="0" max="1" step="0.02" value="${c.bust ?? FIG.bust}"></div>
-        <div class="f"><label>Bounce ${Math.round((c.jiggle ?? FIG.jiggle) * 100)}%</label><input type="range" id="fJiggle" min="0" max="1" step="0.02" value="${c.jiggle ?? FIG.jiggle}"></div></div>
-      <div class="row"><div class="f"><label>Cleavage ${Math.round((c.cleavage ?? FIG.cleavage) * 100)}%</label><input type="range" id="fCleavage" min="0" max="1" step="0.05" value="${c.cleavage ?? FIG.cleavage}"></div>
-        <div class="f"><label>Skirt length ${Math.round((c.skirtLen ?? FIG.skirtLen) * 100)}%</label><input type="range" id="fSkirtLen" min="0.3" max="1" step="0.02" value="${c.skirtLen ?? FIG.skirtLen}"></div></div>
-      <div class="row"><div class="f"><label>Hips ${signed(c.hips ?? FIG.hips)}</label><input type="range" id="fHips" min="0" max="1" step="0.02" value="${c.hips ?? FIG.hips}"></div>
-        <div class="f"><label>Waist ${signed(c.waist ?? FIG.waist)}</label><input type="range" id="fWaist" min="0" max="1" step="0.02" value="${c.waist ?? FIG.waist}"></div></div>
-      <div class="row"><div class="f"><label>Thighs ${signed(c.thighs ?? FIG.thighs)}</label><input type="range" id="fThighs" min="0" max="1" step="0.02" value="${c.thighs ?? FIG.thighs}"></div>
-        <div class="f"><label>Head ${signed(c.headSize ?? FIG.headSize)}</label><input type="range" id="fHeadSize" min="0" max="1" step="0.02" value="${c.headSize ?? FIG.headSize}"></div></div>
+      <div class="row"><div class="f">${lab('Bust', pct(c.bust ?? FIG.bust))}<input type="range" id="fBust" min="0" max="1" step="0.02" value="${c.bust ?? FIG.bust}"></div>
+        <div class="f">${lab('Bounce', pct(c.jiggle ?? FIG.jiggle))}<input type="range" id="fJiggle" min="0" max="1" step="0.02" value="${c.jiggle ?? FIG.jiggle}"></div></div>
+      <div class="row"><div class="f">${lab('Cleavage', pct(c.cleavage ?? FIG.cleavage))}<input type="range" id="fCleavage" min="0" max="1" step="0.05" value="${c.cleavage ?? FIG.cleavage}"></div>
+        <div class="f">${lab('Skirt length', pct(c.skirtLen ?? FIG.skirtLen))}<input type="range" id="fSkirtLen" min="0.3" max="1" step="0.02" value="${c.skirtLen ?? FIG.skirtLen}"></div></div>
+      <div class="row"><div class="f">${lab('Hips', signed(c.hips ?? FIG.hips))}<input type="range" id="fHips" min="0" max="1" step="0.02" value="${c.hips ?? FIG.hips}"></div>
+        <div class="f">${lab('Waist', signed(c.waist ?? FIG.waist))}<input type="range" id="fWaist" min="0" max="1" step="0.02" value="${c.waist ?? FIG.waist}"></div></div>
+      <div class="row"><div class="f">${lab('Thighs', signed(c.thighs ?? FIG.thighs))}<input type="range" id="fThighs" min="0" max="1" step="0.02" value="${c.thighs ?? FIG.thighs}"></div>
+        <div class="f">${lab('Head', signed(c.headSize ?? FIG.headSize))}<input type="range" id="fHeadSize" min="0" max="1" step="0.02" value="${c.headSize ?? FIG.headSize}"></div></div>
       <div class="row"><div class="f fix"><label>&nbsp;</label><button class="ghost" id="btnResetBody">Reset body</button></div><div class="f"></div></div>
       <div class="row"><div class="f"><label>Outfit</label><select id="fOutfit">${Object.entries(OUTFITS).map(([k, o]) => `<option value="${k}"${k === outfit ? ' selected' : ''}>${esc(o.label)}</option>`).join('')}</select></div>
         <div class="f"><label>Top</label><select id="fTopStyle">${Object.entries(TOP_STYLES).map(([k, l]) => `<option value="${k}"${k === (TOP_STYLES[c.topStyle] ? c.topStyle : 'full') ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></div></div>
@@ -680,7 +684,7 @@ function renderPanel() {
       <div class="sep"></div>
       <div class="row"><div class="f"><label>Hold</label><select id="fSignHold">${[['auto', 'Either hand'], ['one', 'One hand'], ['two', 'Both hands']].map(([v, l]) => `<option value="${v}"${v === (c.signHold || 'auto') ? ' selected' : ''}>${l}</option>`).join('')}</select></div>
         <div class="f"><label>Board style</label><select id="fSignStyle">${SIGN_STYLES.map((st, i) => `<option value="${i}"${i === SIGN_STYLES.indexOf(signStyle()) ? ' selected' : ''}>${esc(st.label)}</option>`).join('')}</select></div></div>
-      <div class="f"><label>Board size ${Math.round((c.signSize ?? 1) * 100)}%</label><input type="range" id="fSignSize" min="0.5" max="1.8" step="0.05" value="${c.signSize ?? 1}"></div>
+      <div class="f">${lab('Board size', pct(c.signSize ?? 1))}<input type="range" id="fSignSize" min="0.5" max="1.8" step="0.05" value="${c.signSize ?? 1}"></div>
       <div class="hint">Held in both hands the board is sized to her grip, so this only widens the overhang.</div>
       <div class="row"><div class="f half"><label>SOL price $</label><input type="text" id="fSolPrice" value="${esc(String(c.solPrice ?? 101.95))}" spellcheck="false"></div><div class="f"></div></div>
       <div class="sep"></div>
@@ -726,8 +730,8 @@ function renderPanel() {
   $('btnModel').onclick = () => bridge.pickModel();
   $('btnDefaultModel').onclick = () => bridge.defaultModel();
   $('fTop').onchange = (e) => saveCfg({ alwaysOnTop: e.target.checked });
-  $('fBust').oninput = (e) => { saveCfg({ bust: Number(e.target.value) }); applyFigure(); e.target.previousElementSibling.textContent = `Bust ${Math.round(cfg.bust * 100)}%`; };
-  $('fJiggle').oninput = (e) => { saveCfg({ jiggle: Number(e.target.value) }); applyFigure(); e.target.previousElementSibling.textContent = `Bounce ${Math.round(cfg.jiggle * 100)}%`; };
+  $('fBust').oninput = (e) => { saveCfg({ bust: Number(e.target.value) }); applyFigure(); readout(e.target, pct(cfg.bust)); };
+  $('fJiggle').oninput = (e) => { saveCfg({ jiggle: Number(e.target.value) }); applyFigure(); readout(e.target, pct(cfg.jiggle)); };
   $('fOutfit').onchange = (e) => { saveCfg({ outfit: e.target.value }); applyFigureTextures(); renderPanel(); positionPanel(); };
   $('fCleavage').onchange = (e) => { saveCfg({ cleavage: Number(e.target.value) }); applyFigureTextures(); };
   for (const [id, key, label] of [['fHips', 'hips', 'Hips'], ['fWaist', 'waist', 'Waist'],
@@ -736,13 +740,13 @@ function renderPanel() {
     if (el) el.oninput = (e) => {
       const v = Number(e.target.value);
       saveCfg({ [key]: v }); applyFigure();
-      e.target.previousElementSibling.textContent = `${label} ${signed(v)}`;
+      readout(e.target, signed(v));
     };
   }
-  $('fCleavage').oninput = (e) => { e.target.previousElementSibling.textContent = `Cleavage ${Math.round(Number(e.target.value) * 100)}%`; };
+  $('fCleavage').oninput = (e) => { readout(e.target, pct(Number(e.target.value))); };
   $('fTopStyle').onchange = (e) => { saveCfg({ topStyle: e.target.value }); applyFigure(); applyFigureTextures(); };
   $('fBottomStyle').onchange = (e) => { saveCfg({ bottomStyle: e.target.value }); applyFigure(); applyFigureTextures(); };
-  $('fSkirtLen').oninput = (e) => { saveCfg({ skirtLen: Number(e.target.value) }); applyFigure(); e.target.previousElementSibling.textContent = `Skirt length ${Math.round(cfg.skirtLen * 100)}%`; };
+  $('fSkirtLen').oninput = (e) => { saveCfg({ skirtLen: Number(e.target.value) }); applyFigure(); readout(e.target, pct(cfg.skirtLen)); };
   $('fBow').onchange = (e) => { saveCfg({ bow: e.target.checked }); applyFigure(); };
   $('fHairColor').onchange = (e) => { saveCfg({ hairColor: e.target.value }); applyFigureTextures(); };
   $('fEyeColor').onchange = (e) => { saveCfg({ eyeColor: e.target.value }); applyFigureTextures(); };
@@ -755,9 +759,9 @@ function renderPanel() {
   for (const [id, key] of [['fCustomVest', 'customVest'], ['fCustomSkirt', 'customSkirt'], ['fCustomBow', 'customBow']]) {
     const el = $(id); if (el) el.onchange = (e) => { saveCfg({ [key]: e.target.value }); applyFigureTextures(); };
   }
-  $('fVol').oninput = (e) => { saveCfg({ volume: Number(e.target.value) }); e.target.previousElementSibling.textContent = `Volume ${Math.round(cfg.volume * 100)}%`; };
+  $('fVol').oninput = (e) => { saveCfg({ volume: Number(e.target.value) }); readout(e.target, pct(cfg.volume)); };
   $('fVol').onchange = () => playAssigned(cfg.sounds.sell || 'un');
-  $('fPitch').oninput = (e) => { saveCfg({ pitch: Number(e.target.value) }); e.target.previousElementSibling.textContent = `Pitch ${cfg.pitch.toFixed(2)}×`; };
+  $('fPitch').oninput = (e) => { saveCfg({ pitch: Number(e.target.value) }); readout(e.target, cfg.pitch.toFixed(2) + '×'); };
   $('fPitch').onchange = () => playAssigned(cfg.sounds.click || 'hai');
   $('fMute').onchange = (e) => saveCfg({ muted: e.target.checked });
   $('btnVoiceTest').onclick = () => { playAssigned(pick([cfg.sounds.click, cfg.sounds.profit, cfg.sounds.connect, cfg.sounds.hover].filter(Boolean)) || 'hai'); say(pick(LINES.greet)(herName())); };
@@ -772,7 +776,7 @@ function renderPanel() {
   $('fSignStyle').onchange = (e) => { saveCfg({ signStyle: Number(e.target.value) }); if (sign) sign.text = ''; };
   $('fSolPrice').onchange = (e) => { const v = Number(e.target.value); if (v > 0) saveCfg({ solPrice: v }); if (sign) sign.text = ''; };
   $('btnTestSign').onclick = () => { if (cfg.sign === false) saveCfg({ sign: true }); toggleDemoSign(); renderPanel(); positionPanel(); };
-  $('fSignSize').oninput = (e) => { saveCfg({ signSize: Number(e.target.value) }); e.target.previousElementSibling.textContent = `Sign size ${Math.round(cfg.signSize * 100)}%`; };
+  $('fSignSize').oninput = (e) => { saveCfg({ signSize: Number(e.target.value) }); readout(e.target, pct(cfg.signSize)); };
   $('tProfit').onclick = () => reactToTrade({ side: 'sell', symbol: 'PEPE', quote: 'SOL', amount: 1.42, pnl: 0.61, pnlPct: 75 });
   $('tLoss').onclick = () => reactToTrade({ side: 'sell', symbol: 'WOJAK', quote: 'SOL', amount: 0.31, pnl: -0.24, pnlPct: -44 });
   $('tBuy').onclick = () => reactToTrade({ side: 'buy', symbol: 'MOON', quote: 'SOL', amount: 0.5 });
@@ -916,7 +920,7 @@ window.addEventListener('mouseup', (e) => {
       setState(pet.onGround ? 'wave' : 'falling');
       // The press already put her settings away, so a click with them open is "close" and must
       // not toggle them straight back; one with them closed opens them.
-      if (!downPanelOpen) { openPanel(); sound('click'); say(pick(LINES.greet)(herName())); }
+      if (!downPanelOpen && pet.onGround) { openPanel(); sound('click'); say(pick(LINES.greet)(herName())); }
     }
     return;
   }
@@ -993,7 +997,8 @@ function hitTest() {
     if (!b) continue;
     _v.setFromMatrixPosition(b.matrixWorld).project(camera);
     const sp = { x: canvasLeft + (_v.x + 1) / 2 * CS, y: canvasTop + (1 - _v.y) / 2 * CS };
-    const r = Math.max(14, HIT_R[n] * ppu * (model.height / 1.6) * 1.2);
+    const hs = n === 'head' ? ((model.rawBones.head && model.rawBones.head.scale.y) || 1) : 1; // the Head slider scales it
+    const r = Math.max(14, HIT_R[n] * hs * ppu * (model.height / 1.6) * 1.2);
     const d = Math.hypot(sp.x - cursor.sx, sp.y - cursor.sy);
     if (d < r && d - r < bestD) { bestD = d - r; best = n; }
   }
@@ -1253,9 +1258,12 @@ function chooseIdleAction() {
   // without any one of the bigger actions repeating often enough to notice.
   // 'shuffle' is in twice as well: it is the fidget that actually moves her, and a body that
   // never changes its footing reads as a statue. The hop needs her hands, or she would jump with the board.
-  const pool = handsFree
+  // Like the walk, the shuffle is off while her settings are open: the panel follows her, and a
+  // slider that slides out from under the cursor mid-drag is maddening.
+  const pool = (handsFree
     ? ['stretch', 'lookaround', 'headtilt', 'sway', 'hum', 'lookaround', 'peek', 'peek', 'fixhair', 'think', 'nod', 'shuffle', 'shuffle', 'hop']
-    : ['lookaround', 'headtilt', 'sway', 'hum', 'peek', 'peek', 'nod', 'lookaround', 'shuffle', 'shuffle'];
+    : ['lookaround', 'headtilt', 'sway', 'hum', 'peek', 'peek', 'nod', 'lookaround', 'shuffle', 'shuffle']
+  ).filter((n) => !(panelOpen && n === 'shuffle'));
   const name = pick(pool);
   const dur = { stretch: 3.2, lookaround: 3.5, headtilt: 2.2, sway: 4, hum: 4,
     peek: 2.8, fixhair: 2.6, think: 3.8, nod: 2.0, shuffle: 2.4, hop: 1.15 }[name];
@@ -2056,7 +2064,46 @@ const SIGN_STYLES = [
   pill(g, c.sub, 426, '700 74px "Segoe UI", system-ui, sans-serif', 'rgba(255,255,255,0.12)', 'rgba(255,255,255,0.45)', '#ffffff');
   if (c.foot) sTxt(g, c.foot, SW / 2, 534, '600 54px "Segoe UI", system-ui, sans-serif', 'rgba(255,255,255,0.5)', SW - 130);
 } },
+
+// Her panel's twin, and the default: near-black glass with a soft pink / violet / teal bloom in the
+// top corner and the figure in a white-to-tone gradient. A loss swaps the mint bloom for rose.
+{ key: 'aurora', label: 'Aurora glass', draw(g, c, t) {
+  const acc = c.tone > 0 ? '#3fe0a5' : c.tone < 0 ? '#ff5c8a' : '#a79fbb';
+  const x = 26, y = 16, w = SW - 52, h = BOARD_H - 32, r = 60;
+  g.save(); g.shadowColor = 'rgba(0,0,0,0.5)'; g.shadowBlur = 40; g.shadowOffsetY = 14;
+  g.fillStyle = 'rgba(13,11,18,0.97)'; roundRect(g, x, y, w, h, r); g.fill(); g.restore();
+  g.save();
+  roundRect(g, x, y, w, h, r); g.clip();
+  g.filter = 'blur(45px)';
+  const bloom = (cx, cy, rad, col) => {
+    const gr = g.createRadialGradient(cx, cy, 0, cx, cy, rad);
+    gr.addColorStop(0, col); gr.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = gr; g.fillRect(cx - rad, cy - rad, rad * 2, rad * 2);
+  };
+  bloom(SW - 200, 30, 300, c.tone < 0 ? 'rgba(255,92,138,1)' : 'rgba(255,111,174,1)');
+  bloom(SW - 40, 130, 280, 'rgba(124,92,255,1)');
+  if (c.tone >= 0) bloom(SW - 340, 150, 230, 'rgba(52,213,201,0.85)');
+  g.filter = 'none';
+  g.restore();
+  g.strokeStyle = 'rgba(255,255,255,0.14)'; g.lineWidth = 3; roundRect(g, x, y, w, h, r); g.stroke();
+  sTxt(g, c.title.toUpperCase(), SW / 2, 116, '600 48px Rubik, "Segoe UI", system-ui, sans-serif', '#a79fbb', SW - 260, '8px');
+  const font = '700 176px Outfit, "Segoe UI", system-ui, sans-serif';
+  g.font = font;
+  const tw = Math.min(SW - 110, g.measureText(c.amount).width);
+  const grad = g.createLinearGradient(SW / 2 - tw / 2, 0, SW / 2 + tw / 2, 0);
+  grad.addColorStop(0.1, '#ffffff'); grad.addColorStop(0.9, acc);
+  sTxt(g, c.amount, SW / 2, 296, font, grad, SW - 110);
+  pill(g, c.sub, 428, '500 54px Rubik, "Segoe UI", system-ui, sans-serif', 'rgba(255,255,255,0.07)', 'rgba(255,255,255,0.14)', acc);
+  if (c.foot) sTxt(g, c.foot.toUpperCase(), SW / 2, 540, '400 30px Rubik, "Segoe UI", system-ui, sans-serif', '#6f6785', SW - 130, '3px');
+} },
 ];
+// Canvas text does not pull a @font-face in on its own, so the board's typefaces are requested up
+// front and the board is redrawn once they land — otherwise it would keep the fallback face until
+// its text next changed.
+if (document.fonts && document.fonts.load) {
+  Promise.all([document.fonts.load('700 100px Outfit'), document.fonts.load('500 40px Rubik')])
+    .then(() => { if (sign) sign.text = ''; }).catch(() => {});
+}
 
 function signStyle() {
   const i = Number(cfg?.signStyle);
@@ -2403,6 +2450,7 @@ function figureMaterials(vrm) {
   const found = {};
   const add = (key, m) => {
     if (!found[key]) found[key] = { list: [] };
+    if (found[key].list.some((x) => x.m === m)) return;   // shared by several meshes: one record
     found[key].list.push({
       m,
       map: m.map,
@@ -2416,8 +2464,10 @@ function figureMaterials(vrm) {
     if (!o.isMesh && !o.isSkinnedMesh) return;
     for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
       if (!m || !m.map) continue;
+      if (m.isOutline) continue;                            // outline clones follow their surface (syncOutlines)
       const n = m.name || '';
-      const key = /Tops/i.test(n) ? 'tops'
+      const key = /Face.*SKIN/i.test(n) ? 'face'
+        : /Tops/i.test(n) ? 'tops'
         : /Bottoms/i.test(n) ? 'skirt'
         : /AccessoryNeck/i.test(n) ? 'bow'
         : /Body.*SKIN/i.test(n) ? 'skin'
@@ -2481,9 +2531,10 @@ function makeTexture(src, canvas) {
 // VRoid leaves the skin under the clothes transparent or black, because nothing was ever meant to
 // see it. Cutting a neckline exposes exactly that, so the empty pixels are filled with the average
 // skin tone sampled from a patch of her body that is always painted.
-// `rects` (texture px, [x0, y0, x1, y1]) limits the fill to those areas; without it the whole sheet
-// is filled. Skin left transparent under the top cannot show through it when her chest bounces.
-function fillSkin(g, w, h, sx, sy, rects) {
+// `inside(u, v)` (2048-space texture px) limits the fill to where it returns true; without it the
+// whole sheet is filled. Skin left transparent under the top cannot show through it when her chest
+// bounces, so the less of it is filled the better.
+function fillSkin(g, w, h, sx, sy, inside) {
   const id = g.getImageData(0, 0, w, h), d = id.data;
   let sr = 0, sg = 0, sb = 0, n = 0;
   for (let y = Math.round(90 * sy); y < Math.round(215 * sy); y += 2) {
@@ -2495,15 +2546,13 @@ function fillSkin(g, w, h, sx, sy, rects) {
   }
   if (!n) return null;
   sr /= n; sg /= n; sb /= n;
-  const boxes = rects ? rects.map((r) => [Math.round(r[0] * sx), Math.round(r[1] * sy), Math.round(r[2] * sx), Math.round(r[3] * sy)]) : [[0, 0, w, h]];
-  for (const [x0, y0, x1, y1] of boxes) {
-    for (let y = Math.max(0, y0); y < Math.min(h, y1); y++) {
-      for (let x = Math.max(0, x0); x < Math.min(w, x1); x++) {
-        const i = (y * w + x) * 4;
-        if (d[i + 3] < 40 || Math.max(d[i], d[i + 1], d[i + 2]) < 26) {
-          d[i] = sr; d[i + 1] = sg; d[i + 2] = sb; d[i + 3] = 255;
-        }
-      }
+  for (let y = 0; y < h; y++) {
+    const v = y / sy;
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      if (d[i + 3] >= 40 && Math.max(d[i], d[i + 1], d[i + 2]) >= 26) continue;
+      if (inside && !inside(x / sx, v)) continue;
+      d[i] = sr; d[i + 1] = sg; d[i + 2] = sb; d[i + 3] = 255;
     }
   }
   g.putImageData(id, 0, 0);
@@ -2535,7 +2584,7 @@ function applyFigureTextures() {
     for (const f of F[k].list) {
       for (const t of f.generated) t.dispose();
       f.generated = [];
-      if (!needs) { f.m.map = f.map; if (f.shade) f.m.shadeMultiplyTexture = f.shade; if (k === 'tops') f.m.alphaTest = f.alphaTest; f.m.needsUpdate = true; continue; }
+      if (!needs) { f.m.map = f.baseMap = f.map; if (f.shade) f.m.shadeMultiplyTexture = f.baseShade = f.shade; if (k === 'tops') f.m.alphaTest = f.alphaTest; f.m.needsUpdate = true; continue; }
       const process = (src) => {
         if (cache.has(src)) return cache.get(src);
         const img = src.image, w = img.width, h = img.height;
@@ -2572,14 +2621,22 @@ function applyFigureTextures() {
           g.globalCompositeOperation = 'source-over';
         }
         if (k === 'skin') {
-          // With the top on, only the window the neckline can open needs skin behind it. Filling the
-          // whole sheet made the body under the shirt opaque, and it showed below the hem whenever
-          // her chest bounced. A top with parts removed needs the skin everywhere it could expose.
-          const rects = top === 'full'
-            ? [[SKIN_UV.midU - 330, SKIN_UV.neckV - 90, SKIN_UV.midU + 330, SKIN_UV.bandV + 10]]
-              .concat(bottom === 'bikini' ? [[0, SKIN_UV.hipTop - 80, 2048, 2048]] : [])
-            : null;
-          const tone = fillSkin(g, w, h, sx, sy, rects) || [0.98, 0.85, 0.78];
+          // With the top on, only the window the neckline opens needs skin behind it: a V between the
+          // breasts, as wide as the neckline and tapering with it. Anything wider — a box round the
+          // chest — makes the undersides of her breasts opaque too, and those swing out from under
+          // the top when she bounces. A top with parts removed needs the skin everywhere it exposes.
+          let inside = null;
+          if (top === 'full') {
+            const topV = SKIN_UV.neckV - 90, apexV = lerp(620, 800, cleavage);
+            const half = lerp(80, 260, cleavage), taper = lerp(0.85, 0.6, cleavage);
+            inside = (u, v) => {
+              if (bottom === 'bikini' && v >= SKIN_UV.hipTop - 80) return true;   // the skirt is off: hips and legs show
+              if (v < topV || v > apexV) return false;
+              const t = (v - topV) / (apexV - topV);
+              return Math.abs(u - SKIN_UV.midU) <= half * (1 - t * taper);
+            };
+          }
+          const tone = fillSkin(g, w, h, sx, sy, inside) || [0.98, 0.85, 0.78];
           g.save();
           if (cleavage > 0 || top === 'bikini') {
             // soft crease between the breasts plus a little shading on their inner curves
@@ -2634,12 +2691,13 @@ function applyFigureTextures() {
         cache.set(src, t);
         return t;
       };
-      f.m.map = process(f.map);
-      if (f.shade) f.m.shadeMultiplyTexture = process(f.shade);
+      f.m.map = f.baseMap = process(f.map);
+      if (f.shade) f.m.shadeMultiplyTexture = f.baseShade = process(f.shade);
       if (k === 'tops') f.m.alphaTest = (cleavage > 0 || top !== 'full') ? 0.5 : f.alphaTest;
       f.m.needsUpdate = true;
     }
   }
+  woundTexKey = '';   // the skin was rebuilt from scratch: her wounds have to go back on
   syncOutlines();
 }
 
@@ -2796,6 +2854,8 @@ function updateFx(dt) {
   if (pet.hurt > 0) pet.hurt = Math.max(0, pet.hurt - dt / 120);
   // wounds vanish one by one as she heals (the worst ones first)
   pet.wounds = pet.wounds.filter((w) => pet.hurt > w.def.thr * 0.45);
+  const wk = woundKeyNow();
+  if (wk !== woundTexKey && model.figure) { woundTexKey = wk; paintWounds(); }
   for (const s of sparks) { s.life += dt; s.x += s.vx * dt; s.y += s.vy * dt; s.vy *= 1 - 0.6 * dt; }
   for (let i = sparks.length - 1; i >= 0; i--) if (sparks[i].life >= sparks[i].dur) sparks.splice(i, 1);
 
@@ -2858,121 +2918,198 @@ function bloodStreak(g, x, y, len, w0, wob, fill) {
   return { x: L[N][0] + w0 * (1 - 0.72), y: L[N][1] };
 }
 
+// ---- wounds, painted into her skin -----------------------------------------------------------
+// They used to be drawn on the 2D overlay, projected from her bones: they floated in front of her,
+// ignored her hair and hands, took no shading and stayed put when her face moved. Now they are
+// painted straight into the face and body skin textures (lit and shade maps both), so a bruise
+// curves with her cheek, sits under her fringe, darkens in shadow and moves with her expressions.
+//
+// Each wound is anchored once by casting a ray from the front at the spot the overlay used to draw
+// it. The hit gives the texture coordinate under that spot and which skin it is; two more rays a
+// little to her right and downwards give how texture space stretches there, so the same drawing
+// code runs under a canvas transform instead of being re-authored for every model's UV layout.
+let woundTexKey = '';
+const _ray = new THREE.Raycaster(), _rayO = new THREE.Vector3(), _rayD = new THREE.Vector3(0, 0, -1);
+const _wa = new THREE.Vector3(), _wb = new THREE.Vector3();
+function skinRecord(mat) {
+  for (const k of ['face', 'skin']) for (const f of (model.figure[k] || { list: [] }).list) if (f.m === mat) return f;
+  return null;
+}
+function skinMeshes() {
+  const out = [];
+  model.vrm.scene.traverse((o) => {
+    if (!o.isMesh && !o.isSkinnedMesh) return;
+    if ((Array.isArray(o.material) ? o.material : [o.material]).some((m) => skinRecord(m))) out.push(o);
+  });
+  return out;
+}
+// the skin under a point, seen from the front: which texture, and where on it (null if only hair or clothes are there)
+function skinUnder(x, y) {
+  model.skinMeshes ||= skinMeshes();
+  _ray.set(_rayO.set(x, y, model.root.position.z + 4), _rayD);
+  for (const hit of _ray.intersectObjects(model.skinMeshes, false)) {
+    if (!hit.uv || !hit.face) continue;
+    const mats = Array.isArray(hit.object.material) ? hit.object.material : [hit.object.material];
+    const f = skinRecord(mats[hit.face.materialIndex] || mats[0]);
+    if (f) return { f, u: hit.uv.x, v: hit.uv.y };
+  }
+  return null;
+}
+function woundAnchor(w) {
+  if (w.anchor !== undefined) return w.anchor;
+  // the rays come from the front, so wait until she is more or less facing it
+  if (Math.abs(pet.yaw) > 0.25 || Math.abs(pet.theta) > 0.25) return null;
+  const d = w.def;
+  const R = 0.052 * model.height;                   // face radius (anime head ≈ 1/7 of height)
+  let px, py, rx, ry, dx, dy, ang = 0;
+  if (d.bone) {
+    const b1 = model.bones[d.bone], b2 = model.bones[d.bone2];
+    if (!b1 || !b2) return (w.anchor = null);
+    _wa.setFromMatrixPosition(b1.matrixWorld); _wb.setFromMatrixPosition(b2.matrixWorld);
+    px = lerp(_wa.x, _wb.x, d.k); py = lerp(_wa.y, _wb.y, d.k);
+    ang = Math.atan2(-(_wb.y - _wa.y), _wb.x - _wa.x) + 0.6;       // the limb's direction, in a right/down frame
+    rx = 1; ry = 0; dx = 0; dy = -1;
+  } else {
+    const hb = model.bones.head, nb = model.bones.neck || model.bones.upperChest || model.bones.chest;
+    if (!hb || !nb) return (w.anchor = null);
+    _wa.setFromMatrixPosition(hb.matrixWorld); _wb.setFromMatrixPosition(nb.matrixWorld);
+    let ux = _wa.x - _wb.x, uy = _wa.y - _wb.y; const l = Math.hypot(ux, uy) || 1; ux /= l; uy /= l;
+    rx = uy; ry = -ux; dx = -ux; dy = -uy;           // her screen-right, and down her face
+    // the head bone sits at the jaw on VRM rigs; the face centre (between eyes and mouth) is a bit above it
+    const fx = _wa.x + ux * R * 0.42, fy = _wa.y + uy * R * 0.42;
+    px = fx + rx * d.dx * R + ux * d.dy * R; py = fy + ry * d.dx * R + uy * d.dy * R;
+  }
+  const h0 = skinUnder(px, py);
+  if (!h0) { bridge.log(`wound ${d.type}: no skin under (${px.toFixed(3)}, ${py.toFixed(3)}); ${model.skinMeshes.length} skin meshes, ${_ray.intersectObjects(model.skinMeshes, false).length} hits`); return (w.anchor = null); }
+  const eps = 0.3 * R;
+  const hr = skinUnder(px + rx * eps, py + ry * eps), hd = skinUnder(px + dx * eps, py + dy * eps);
+  let dr = hr && hr.f === h0.f ? [(hr.u - h0.u) / eps, (hr.v - h0.v) / eps] : null;
+  let dd = hd && hd.f === h0.f ? [(hd.u - h0.u) / eps, (hd.v - h0.v) / eps] : null;
+  if (!dr && !dd) { bridge.log(`wound ${d.type}: skin found but no texture gradient`); return (w.anchor = null); }
+  if (!dr) dr = [dd[1], -dd[0]];                    // one side ray landed off the skin: assume square texels
+  if (!dd) dd = [-dr[1], dr[0]];
+  return (w.anchor = { f: h0.f, u: h0.u, v: h0.v, dr, dd, R, ang });
+}
+// Everything the painting depends on, so a repaint happens only when something changed: the wound
+// list, a wound's age (fine steps while it is fresh and still growing, coarse once it has set) and
+// how hurt she is, which sets how strongly each one shows.
+function woundKeyNow() {
+  if (!model || !model.figure) return '';
+  if (!pet.wounds.length || pet.hurt <= 0) return 'none';
+  return figureTexKey + '|' + Math.round(pet.hurt * 20) + '|' + pet.wounds.map((w) => {
+    const age = T - w.born;
+    return w.def.type + w.def.thr + ':' + (age < 25 ? Math.round(age / 0.4) : 'set') + (w.anchor === undefined ? '?' : '');
+  }).join(',');
+}
+function paintWounds() {
+  const F = model.figure;
+  const byTex = new Map();
+  if (pet.hurt > 0) for (const w of pet.wounds) { const a = woundAnchor(w); if (a) { if (!byTex.has(a.f)) byTex.set(a.f, []); byTex.get(a.f).push(w); } }
+  for (const k of ['face', 'skin']) for (const f of (F[k] || { list: [] }).list) {
+    for (const t of f.woundTex || []) t.dispose();
+    f.woundTex = [];
+    const base = f.baseMap || f.map, baseShade = f.baseShade || f.shade;
+    const list = byTex.get(f);
+    if (!list) { f.m.map = base; if (baseShade) f.m.shadeMultiplyTexture = baseShade; f.m.needsUpdate = true; continue; }
+    const paint = (src) => {
+      const img = src.image, cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height;
+      const g = cv.getContext('2d');
+      g.drawImage(img, 0, 0);
+      for (const w of list) drawWoundInto(g, w, src, cv.width, cv.height);
+      if (src === base) f.woundCanvas = cv;   // kept so the self-test can save the painted sheet and look at it
+      const t = makeTexture(src, cv); f.woundTex.push(t); return t;
+    };
+    f.m.map = paint(base);
+    if (baseShade) f.m.shadeMultiplyTexture = paint(baseShade);
+    f.m.needsUpdate = true;
+  }
+  syncOutlines();
+}
+// One wound onto one texture. The canvas is transformed so that the wound's own anchor is the
+// origin, x runs to her right and y down her face, in units of the face radius; the drawing itself
+// is the overlay's, unchanged in spirit.
+function drawWoundInto(g, w, src, W, H) {
+  const A = w.anchor, d = w.def;
+  const flip = src.flipY ? -1 : 1, y0 = src.flipY ? (1 - A.v) * H : A.v * H;
+  const a11 = A.dr[0] * A.R * W, a21 = A.dr[1] * A.R * H * flip, a12 = A.dd[0] * A.R * W, a22 = A.dd[1] * A.R * H * flip;
+  if (Math.abs(a11 * a22 - a12 * a21) < 1e-6) return;   // degenerate: the two side rays landed on the same texel
+  const grow = smoothstep((T - w.born) / 1.4);
+  const alpha = smoothstep(pet.hurt / 0.2) * grow * clamp((pet.hurt - d.thr * 0.45) / (d.thr * 0.35), 0, 1);
+  if (alpha <= 0.01) return;
+  g.save();
+  g.setTransform(a11, a21, a12, a22, A.u * W, y0);
+  g.globalAlpha = alpha;
+  if (d.type === 'bruise') {
+    const r = d.r;
+    const deep = clamp((T - w.born) / 20, 0, 1) * 0.35 + 0.35 * pet.hurt;   // darkens over time / with more losses
+    const gr = g.createRadialGradient(0, 0, 0, 0, 0, r);
+    gr.addColorStop(0, `rgba(96,38,116,${0.6 * deep + 0.4})`);
+    gr.addColorStop(0.5, `rgba(128,66,134,${0.4 * deep + 0.2})`);
+    // the sallow ring an older bruise gets; it is what stops this reading as a purple sticker
+    gr.addColorStop(0.82, `rgba(150,138,74,${0.22 * deep + 0.1})`);
+    gr.addColorStop(1, 'rgba(150,130,90,0)');
+    g.fillStyle = gr;
+    g.beginPath(); g.ellipse(0, 0, r, r * 0.8, 0.4, 0, Math.PI * 2); g.fill();
+  } else if (d.type === 'bandaid') {
+    const L = 0.62, Wd = 0.2;
+    for (const rot of [-0.7, 0.7]) {
+      g.save(); g.rotate(rot);
+      g.fillStyle = '#dcae7e'; roundRect(g, -L / 2, -Wd / 2, L, Wd, Wd / 2); g.fill();
+      g.strokeStyle = 'rgba(120,78,44,0.55)'; g.lineWidth = Wd * 0.07;
+      roundRect(g, -L / 2, -Wd / 2, L, Wd, Wd / 2); g.stroke();
+      g.fillStyle = '#f6ecd9'; roundRect(g, -L * 0.19, -Wd * 0.34, L * 0.38, Wd * 0.68, Wd * 0.18); g.fill();
+      // the little perforations either side of the pad
+      g.fillStyle = 'rgba(120,78,44,0.4)';
+      for (const sx of [-1, 1]) for (let i = -1; i <= 1; i++) { g.beginPath(); g.arc(sx * L * 0.33, i * Wd * 0.26, Wd * 0.05, 0, Math.PI * 2); g.fill(); }
+      g.restore();
+    }
+  } else if (d.type === 'trickle' || d.type === 'cut') {
+    if (d.type === 'cut') {
+      // a short slash along the cheekbone, dark in the middle and thin at both ends
+      const half = 0.15;
+      g.strokeStyle = '#6d0d14'; g.lineCap = 'round'; g.lineWidth = 0.028;
+      g.beginPath(); g.moveTo(-half, 0.03); g.quadraticCurveTo(0, 0.02, half, -0.05); g.stroke();
+    }
+    // blood runs down her face; the streak lengthens over the first few seconds
+    const len = d.len * smoothstep((T - w.born) / 4.5);
+    const wob = Math.sin(w.seed * 20) * 0.1;
+    const wd = d.w * 0.62;
+    const tip = bloodStreak(g, 0, 0, len, wd, wob, '#9c1019');
+    g.fillStyle = '#b3141f'; g.beginPath(); g.ellipse(tip.x, tip.y, wd * 0.85, wd * 1.15, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#6d0d14'; g.beginPath(); g.ellipse(0, 0, wd * 1.05, wd * 0.8, 0, 0, Math.PI * 2); g.fill();
+    // one specular sliver so it looks wet rather than painted
+    g.globalAlpha = alpha * 0.4; g.fillStyle = '#ff7a86';
+    g.beginPath(); g.ellipse(-wd * 0.3, len * 0.32, wd * 0.22, len * 0.16, 0, 0, Math.PI * 2); g.fill();
+  } else if (d.type === 'lip') {
+    g.fillStyle = '#9c1219'; g.beginPath(); g.arc(0, 0, 0.07, 0, Math.PI * 2); g.fill();
+  } else if (d.type === 'scrape') {
+    g.rotate(A.ang);
+    const S = 0.02 / 0.052;                          // the overlay's 2% of her height, in face radii
+    // a soft raw patch under it, so the grazes sit on reddened skin instead of bare arm
+    const gr2 = g.createRadialGradient(0, 0, 0, 0, 0, S);
+    gr2.addColorStop(0, 'rgba(176,54,58,0.42)'); gr2.addColorStop(1, 'rgba(176,54,58,0)');
+    g.fillStyle = gr2; g.beginPath(); g.ellipse(0, 0, S, S * 0.62, 0, 0, Math.PI * 2); g.fill();
+    // short broken strokes at scattered angles; three even parallel lines would read as a barcode
+    g.strokeStyle = 'rgba(140,26,34,0.9)'; g.lineCap = 'round';
+    for (let i = 0; i < 7; i++) {
+      const q = Math.sin(w.seed * 100 + i * 12.9898) * 0.5 + 0.5;
+      const q2 = Math.sin(w.seed * 57 + i * 78.233) * 0.5 + 0.5;
+      const ox = (q - 0.5) * S * 1.7, oy = (q2 - 0.5) * S * 1.05;
+      const l = S * (0.28 + q2 * 0.5), aa = (q - 0.5) * 0.7;
+      g.lineWidth = 0.0022 / 0.052 * (0.7 + q * 0.8);
+      g.beginPath(); g.moveTo(ox - Math.cos(aa) * l / 2, oy - Math.sin(aa) * l / 2); g.lineTo(ox + Math.cos(aa) * l / 2, oy + Math.sin(aa) * l / 2); g.stroke();
+    }
+  }
+  g.restore();
+}
+
 function drawFx() {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const bw = Math.round(CS * dpr);
   if (fx.width !== bw || fx.height !== bw) { fx.width = fx.height = bw; }
   fxg.setTransform(dpr, 0, 0, dpr, 0, 0);
   fxg.clearRect(0, 0, CS, CS);
-  if (!model || (pet.hurt <= 0 && sparks.length === 0)) return;
-  const hs = model.height * ppu; // her height on screen, px
-
-  // ---- wounds
-  if (pet.hurt > 0 && pet.wounds.length) {
-    const hp = bonePx('head'), np = bonePx('neck') || bonePx('upperChest') || bonePx('chest');
-    let ux = 0, uy = -1;
-    if (hp && np) { const dx = hp.x - np.x, dy = hp.y - np.y, l = Math.hypot(dx, dy) || 1; ux = dx / l; uy = dy / l; }
-    const rx = -uy, ry = ux;                                  // screen-right of her face
-    const R = 0.052 * hs;                                     // face radius (anime head ≈ 1/7 of height)
-    // the head bone sits at the jaw on VRM rigs; the face centre (between eyes and mouth) is a bit above it
-    const fc = hp ? { x: hp.x + ux * R * 0.42, y: hp.y + uy * R * 0.42 } : null;
-    const at = (dx, dy) => ({ x: fc.x + (rx * dx + ux * dy) * R, y: fc.y + (ry * dx + uy * dy) * R });
-    const fade = smoothstep(pet.hurt / 0.2);
-    for (const w of pet.wounds) {
-      const d = w.def;
-      const grow = smoothstep((T - w.born) / 1.4);
-      const a = fade * grow * clamp((pet.hurt - d.thr * 0.45) / (d.thr * 0.35), 0, 1);
-      if (a <= 0.01) continue;
-      fxg.globalAlpha = a;
-      if (d.type === 'bruise' && fc) {
-        const p = at(d.dx, d.dy), r = d.r * R;
-        const deep = clamp((T - w.born) / 20, 0, 1) * 0.35 + 0.35 * pet.hurt;   // darkens over time / with more losses
-        const gr = fxg.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
-        gr.addColorStop(0, `rgba(96,38,116,${0.6 * deep + 0.4})`);
-        gr.addColorStop(0.5, `rgba(128,66,134,${0.4 * deep + 0.2})`);
-        // the sallow ring an older bruise gets; it is what stops this reading as a purple sticker
-        gr.addColorStop(0.82, `rgba(150,138,74,${0.22 * deep + 0.1})`);
-        gr.addColorStop(1, 'rgba(150,130,90,0)');
-        fxg.fillStyle = gr;
-        fxg.beginPath(); fxg.ellipse(p.x, p.y, r, r * 0.8, Math.atan2(ry, rx) + 0.4, 0, Math.PI * 2); fxg.fill();
-      } else if (d.type === 'bandaid' && fc) {
-        const p = at(d.dx, d.dy), L = 0.62 * R, Wd = 0.2 * R;
-        fxg.save(); fxg.translate(p.x, p.y); fxg.rotate(Math.atan2(ry, rx));
-        for (const rot of [-0.7, 0.7]) {
-          fxg.save(); fxg.rotate(rot);
-          fxg.fillStyle = '#dcae7e'; roundRect(fxg, -L / 2, -Wd / 2, L, Wd, Wd / 2); fxg.fill();
-          fxg.strokeStyle = 'rgba(120,78,44,0.55)'; fxg.lineWidth = Wd * 0.07;
-          roundRect(fxg, -L / 2, -Wd / 2, L, Wd, Wd / 2); fxg.stroke();
-          fxg.fillStyle = '#f6ecd9'; roundRect(fxg, -L * 0.19, -Wd * 0.34, L * 0.38, Wd * 0.68, Wd * 0.18); fxg.fill();
-          // the little perforations either side of the pad
-          fxg.fillStyle = 'rgba(120,78,44,0.4)';
-          for (const sx of [-1, 1]) for (let i = -1; i <= 1; i++) {
-            fxg.beginPath(); fxg.arc(sx * L * 0.33, i * Wd * 0.26, Wd * 0.05, 0, Math.PI * 2); fxg.fill();
-          }
-          fxg.restore();
-        }
-        fxg.restore();
-      } else if ((d.type === 'trickle' || d.type === 'cut') && fc) {
-        const p = at(d.dx, d.dy);
-        if (d.type === 'cut') {
-          // a short slash along the brow, dark in the middle and thin at both ends
-          const half = 0.15 * R;
-          fxg.strokeStyle = '#6d0d14'; fxg.lineCap = 'round'; fxg.lineWidth = 0.028 * R;
-          fxg.beginPath();
-          fxg.moveTo(p.x - rx * half - ux * 0.03 * R, p.y - ry * half - uy * 0.03 * R);
-          fxg.quadraticCurveTo(p.x, p.y + 0.02 * R, p.x + rx * half + ux * 0.05 * R, p.y + ry * half + uy * 0.05 * R);
-          fxg.stroke();
-        }
-        // Blood runs with gravity — straight down the screen, however she happens to be hanging.
-        const len = d.len * R * smoothstep((T - w.born) / 4.5);
-        const wob = Math.sin(w.seed * 20) * 0.1 * R;
-        const wd = d.w * R * 0.62;                       // thinner than before: it was reading as a stripe
-        const tip = bloodStreak(fxg, p.x, p.y, len, wd, wob, '#9c1019');
-        // a bead gathering at the end, and the wet source
-        fxg.fillStyle = '#b3141f';
-        fxg.beginPath(); fxg.ellipse(tip.x, tip.y, wd * 0.85, wd * 1.15, 0, 0, Math.PI * 2); fxg.fill();
-        fxg.fillStyle = '#6d0d14';
-        fxg.beginPath(); fxg.ellipse(p.x, p.y, wd * 1.05, wd * 0.8, 0, 0, Math.PI * 2); fxg.fill();
-        // one specular sliver so it looks wet rather than painted
-        fxg.globalAlpha = a * 0.4; fxg.fillStyle = '#ff7a86';
-        fxg.beginPath(); fxg.ellipse(p.x - wd * 0.3, p.y + len * 0.32, wd * 0.22, len * 0.16, 0, 0, Math.PI * 2); fxg.fill();
-        fxg.globalAlpha = a;
-      } else if (d.type === 'lip' && fc) {
-        const p = at(d.dx, d.dy);
-        fxg.fillStyle = '#9c1219';
-        fxg.beginPath(); fxg.arc(p.x, p.y, 0.07 * R, 0, Math.PI * 2); fxg.fill();
-      } else if (d.type === 'scrape') {
-        const a1 = bonePx(d.bone), a2 = bonePx(d.bone2);
-        if (!a1 || !a2) continue;
-        const p = { x: lerp(a1.x, a2.x, d.k), y: lerp(a1.y, a2.y, d.k) };
-        const ang = Math.atan2(a2.y - a1.y, a2.x - a1.x) + 0.6;
-        fxg.save(); fxg.translate(p.x, p.y); fxg.rotate(ang);
-        const S = 0.02 * hs;
-        // a soft raw patch under it, so the grazes sit on reddened skin instead of bare arm
-        const gr2 = fxg.createRadialGradient(0, 0, 0, 0, 0, S);
-        gr2.addColorStop(0, 'rgba(176,54,58,0.42)');
-        gr2.addColorStop(1, 'rgba(176,54,58,0)');
-        fxg.fillStyle = gr2;
-        fxg.beginPath(); fxg.ellipse(0, 0, S, S * 0.62, 0, 0, Math.PI * 2); fxg.fill();
-        // Short broken strokes at scattered angles. Three evenly spaced parallel lines read as a
-        // barcode; grazes are ragged, so vary length, offset and angle per stroke from the seed.
-        fxg.strokeStyle = 'rgba(140,26,34,0.9)'; fxg.lineCap = 'round';
-        for (let i = 0; i < 7; i++) {
-          const q = Math.sin(w.seed * 100 + i * 12.9898) * 0.5 + 0.5;
-          const q2 = Math.sin(w.seed * 57 + i * 78.233) * 0.5 + 0.5;
-          const ox = (q - 0.5) * S * 1.7, oy = (q2 - 0.5) * S * 1.05;
-          const l = S * (0.28 + q2 * 0.5), aa = (q - 0.5) * 0.7;
-          fxg.lineWidth = 0.0022 * hs * (0.7 + q * 0.8);
-          fxg.beginPath();
-          fxg.moveTo(ox - Math.cos(aa) * l / 2, oy - Math.sin(aa) * l / 2);
-          fxg.lineTo(ox + Math.cos(aa) * l / 2, oy + Math.sin(aa) * l / 2);
-          fxg.stroke();
-        }
-        fxg.restore();
-      }
-    }
-    fxg.globalAlpha = 1;
-  }
+  if (!model || sparks.length === 0) return;
 
   // ---- sparkles
   if (sparks.length) {
@@ -3155,6 +3292,8 @@ window.__petModel = () => model;
 window.__petPanel = (open) => (open === undefined ? togglePanel() : open ? openPanel() : closePanel());
 window.__petToScreenV = (v) => projFx(v);
 window.__petBonePx = (n) => bonePx(n);
+window.__petWoundSheets = () => { const o = {}; for (const k of ['face', 'skin']) for (const f of (model && model.figure && model.figure[k] ? model.figure[k].list : [])) if (f.woundCanvas) o[k] = f.woundCanvas.toDataURL('image/png'); return o; };
+window.__petWounds = () => pet.wounds.map((w) => ({ type: w.def.type, anchor: w.anchor === undefined ? 'pending' : w.anchor && { u: +w.anchor.u.toFixed(3), v: +w.anchor.v.toFixed(3), dr: w.anchor.dr.map((x) => +x.toFixed(2)), dd: w.anchor.dd.map((x) => +x.toFixed(2)) } }));
 window.__petSay = say;
 // The website puts her wallet field and her demo buttons on the page itself rather than making a
 // visitor hunt through her panel, so it needs to drive the relay and the panel from outside. The

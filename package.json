@@ -29,6 +29,7 @@
       "dist/**",
       "models/**",
       "sounds/**",
+      "fonts/**",
       "!relay.local.json"
     ],
     "win": {

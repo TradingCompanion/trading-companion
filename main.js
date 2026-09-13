@@ -72,7 +72,7 @@ let settings = {
   topStyle: 'full', bottomStyle: 'skirt', skirtLen: 0.3, bow: false,
   hairColor: '#000000', eyeColor: '#ffffff',   // '' = the model's own colour
   customVest: '#1a1a20', customSkirt: '#1a1a20', customBow: '#f2c73f',
-  sign: true, signSize: 0.5, signStyle: 1, signHold: 'two', solPrice: 101.95, // the PnL sign she holds
+  sign: true, signSize: 0.5, signStyle: 10, signHold: 'two', solPrice: 101.95, // the PnL sign she holds (10 = Aurora glass)
   wallets: '', relayUrl: '', relayToken: DEFAULT_RELAY_TOKEN, autoConnect: true,
   sounds: { ...DEFAULT_SOUNDS },
 };
@@ -91,6 +91,8 @@ function loadSettings() {
     if (!saved.signHoldV2) { saved.signHold = 'two'; saved.signHoldV2 = true; }
     // chalkboard at half size, held in both hands, is the look we settled on
     if (!saved.signLookV2) { saved.signSize = 0.5; saved.signStyle = 1; saved.signHold = 'two'; saved.signLookV2 = true; }
+    // the board now matches her panel (Aurora glass); move existing settings over once
+    if (!saved.signLookV3) { saved.signStyle = 10; saved.signLookV3 = true; }
     Object.assign(settings, saved, { sounds });
     if (!settings.relayToken && DEFAULT_RELAY_TOKEN) settings.relayToken = DEFAULT_RELAY_TOKEN;
   } catch (e) {
@@ -266,7 +268,7 @@ ipcMain.on('save-settings', (_e, patch) => {
   saveSettings();
   if ('alwaysOnTop' in patch && win) win.setAlwaysOnTop(!!settings.alwaysOnTop, 'screen-saver');
   if (sizeChanged) sendSettings();
-  if (tray) tray.setContextMenu(buildMenu());
+  if (tray && (sizeChanged || 'alwaysOnTop' in patch)) tray.setContextMenu(buildMenu()); // the only two settings it shows
 });
 ipcMain.on('pick-model', () => pickModel());
 ipcMain.on('open-sounds-folder', () => {
@@ -491,6 +493,10 @@ async function runSelfTest() {
     await js("window.__petReact({ side: 'sell', symbol: 'RUG2', quote: 'SOL', amount: 0.5, pnl: -1.2, pnlPct: -70 })"); await adv(5.5);
     const ib = await shot('16b-bruised.png');
     expect('stacked losses -> fully bruised', ib.state === 'idle' && await js('window.__pet.hurt > 0.9 && window.__pet.wounds.length >= 8'));
+    console.log('[test] wound anchors:', JSON.stringify(await js('window.__petWounds()')));
+    // the painted skin sheets themselves, so a wound that lands in the wrong place can be seen
+    const sheets = await js('window.__petWoundSheets()');
+    for (const k in sheets) fs.writeFileSync(path.join(outDir, `26-skin-${k}.png`), Buffer.from(sheets[k].split(',')[1], 'base64'));
     await js("window.__petReact({ side: 'sell', symbol: 'MOON', quote: 'SOL', amount: 3, pnl: 2.4, pnlPct: 240 })"); await adv(0.8);
     await shot('16c-bigwin-glow.png');
     expect('big win heals her a bit', await js('window.__pet.hurt < 0.5 && window.__pet.glow > 0.9'));
@@ -588,7 +594,7 @@ async function runSelfTest() {
     await adv(2.6);
     expect('the demo value moves', (await signState()).content.amount !== before);
     const styles = await js('window.__petSignStyles()');
-    expect('there are ten board styles', styles.length === 10);
+    expect('there are eleven board styles', styles.length === 11);
     for (let i = 0; i < styles.length; i++) { await js('window.__petSetStyle(' + i + ')'); await adv(0.5); }
     expect('every style renders without error', (await signState()).visible);
     await js('window.__petSetStyle(0)');
