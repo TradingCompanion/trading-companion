@@ -1,0 +1,61 @@
+{
+  "name": "desktop-pet",
+  "version": "0.1.0",
+  "description": "Yui — an anime VRM desktop pet that reacts to your pump.fun trades",
+  "main": "main.js",
+  "scripts": {
+    "build": "esbuild src/renderer.js --bundle --format=iife --outfile=dist/renderer.js --minify-syntax --target=chrome130",
+    "watch": "esbuild src/renderer.js --bundle --format=iife --outfile=dist/renderer.js --watch",
+    "start": "npm run build && electron .",
+    "test:win": "npm run build && set PET_TEST=1&& electron .",
+    "test": "npm run build && PET_TEST=1 xvfb-run -a -s \"-screen 0 1600x900x24\" electron --no-sandbox --disable-gpu-sandbox --use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader .",
+    "dist": "npm run build && electron-builder",
+    "package": "node scripts/package.js",
+    "package:check": "node scripts/package.js --check",
+    "build:web": "node scripts/build-web.js",
+    "web": "node scripts/build-web.js && node scripts/serve-web.js",
+    "stream-voice": "node tools/streamer-voice/server.js"
+  },
+  "build": {
+    "appId": "fun.pump.yui",
+    "productName": "Yui",
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html",
+      "icon.png",
+      "yui.ico",
+      "README.md",
+      "dist/**",
+      "models/**",
+      "sounds/**",
+      "!relay.local.json"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "zip"
+      ],
+      "icon": "yui.ico"
+    },
+    "mac": {
+      "target": "dmg"
+    },
+    "linux": {
+      "target": "AppImage"
+    },
+    "directories": {
+      "output": "release"
+    }
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@pixiv/three-vrm": "^3.1.0",
+    "three": "^0.169.0"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8",
+    "esbuild": "^0.24.2"
+  }
+}

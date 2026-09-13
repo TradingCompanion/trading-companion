@@ -1,0 +1,180 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Yui — stream voice</title>
+<style>
+  :root { color-scheme: dark; --bg:#0e0f13; --panel:#171922; --line:#252836; --text:#e7e9f0; --dim:#8b90a6; --pink:#ff7ab6; --ok:#5ad19a; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.5 ui-sans-serif,system-ui,"Segoe UI",sans-serif; }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 20px 18px 60px; }
+  h1 { font-size:15px; font-weight:600; letter-spacing:.02em; margin:0 0 14px; color:var(--dim); }
+  h1 b { color:var(--pink); }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px; margin-bottom:12px; }
+  label { display:block; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--dim); margin-bottom:5px; }
+  select, input[type=text] { width:100%; background:#0f1117; color:var(--text); border:1px solid var(--line); border-radius:7px; padding:8px 10px; font:inherit; }
+  textarea { width:100%; background:#0f1117; color:var(--text); border:1px solid var(--line); border-radius:9px; padding:13px 14px; font:16px/1.45 inherit; resize:vertical; min-height:86px; }
+  textarea:focus, select:focus { outline:2px solid var(--pink); outline-offset:-1px; border-color:transparent; }
+  .row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .row3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; }
+  button { background:var(--pink); color:#1a0c14; border:0; border-radius:8px; padding:10px 20px; font:600 14px inherit; cursor:pointer; }
+  button.ghost { background:transparent; color:var(--dim); border:1px solid var(--line); }
+  .bar { display:flex; align-items:center; gap:10px; margin-top:10px; }
+  .status { font-size:12px; color:var(--dim); flex:1; }
+  .status.live { color:var(--pink); }
+  .status.err { color:#ff6b6b; }
+  input[type=range] { width:100%; accent-color:var(--pink); }
+  .hist { max-height:300px; overflow-y:auto; }
+  .hist div { display:flex; gap:10px; align-items:baseline; padding:7px 9px; border-radius:6px; cursor:pointer; font-size:13px; }
+  .hist div:hover { background:#1e2130; }
+  .hist .t { color:var(--dim); font-size:11px; font-variant-numeric:tabular-nums; }
+  .hist .x { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .hist .c { color:var(--ok); font-size:11px; }
+  .meta { display:flex; gap:16px; flex-wrap:wrap; font-size:11px; color:var(--dim); margin-top:9px; font-variant-numeric:tabular-nums; }
+  kbd { background:#0f1117; border:1px solid var(--line); border-bottom-width:2px; border-radius:4px; padding:1px 5px; font:11px ui-monospace,monospace; color:var(--dim); }
+</style>
+<div class="wrap">
+  <h1>Yui — <b>stream voice</b></h1>
+
+  <div class="panel">
+    <textarea id="text" placeholder="Type what she says, then press Enter…" autofocus></textarea>
+    <div class="bar">
+      <button id="say">Speak</button>
+      <button class="ghost" id="stop">Stop</button>
+      <div class="status" id="status">ready</div>
+    </div>
+    <div class="meta">
+      <span><kbd>Enter</kbd> speak</span><span><kbd>Shift</kbd>+<kbd>Enter</kbd> newline</span>
+      <span id="session">0 chars this session</span><span id="quota"></span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="row">
+      <div><label>Voice</label><select id="voice"></select></div>
+      <div>
+        <label>Output device — pick your virtual cable <button id="names" class="ghost" style="padding:1px 7px;font-size:10px;text-transform:none;letter-spacing:0">show names</button></label>
+        <select id="sink"></select>
+      </div>
+    </div>
+    <div class="row3" style="margin-top:12px">
+      <div><label>Model</label><select id="model">
+        <option value="eleven_flash_v2_5">Flash v2.5 — fastest, ½ credits</option>
+        <option value="eleven_turbo_v2_5">Turbo v2.5 — fast</option>
+        <option value="eleven_multilingual_v2">Multilingual v2 — best quality</option>
+      </select></div>
+      <div><label>Stability <span id="stabV" style="color:var(--pink)">0.35</span></label><input type="range" id="stab" min="0" max="1" step="0.05" value="0.35"></div>
+      <div><label>Style <span id="styleV" style="color:var(--pink)">0.30</span></label><input type="range" id="style" min="0" max="1" step="0.05" value="0.3"></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <label>History — click any line to replay it free</label>
+    <div class="hist" id="hist"></div>
+  </div>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+const num = (v) => Number(v).toFixed(2);
+const LS = 'yui-stream-voice';
+let saved = {}; try { saved = JSON.parse(localStorage.getItem(LS)) || {}; } catch {}
+const save = () => localStorage.setItem(LS, JSON.stringify({
+  voice: $('voice').value, sink: $('sink').value, model: $('model').value,
+  stab: $('stab').value, style: $('style').value,
+}));
+
+let sessionChars = 0, audio = null, busy = false;
+const queue = [];
+const status = (msg, cls = '') => { $('status').textContent = msg; $('status').className = 'status ' + cls; };
+
+// ---- the voices on your ElevenLabs account
+fetch('/voices').then((r) => r.json()).then((vs) => {
+  if (vs.error) return status('voices: ' + vs.error, 'err');
+  $('voice').innerHTML = vs.map((v) => `<option value="${v.id}">${v.name} — ${v.category}</option>`).join('');
+  if (saved.voice && vs.some((v) => v.id === saved.voice)) $('voice').value = saved.voice;
+}).catch((e) => status('voices: ' + e.message, 'err'));
+
+fetch('/usage').then((r) => r.json()).then((u) => {
+  if (u.used != null) $('quota').textContent = `${u.used.toLocaleString()} / ${u.limit.toLocaleString()} credits used`;
+}).catch(() => {});
+
+// ---- output devices. Nothing here ever records: the page only chooses where audio comes OUT.
+// Windows withholds device *names* from a page that has never been granted audio permission, so
+// unnamed entries are normal. "Show names" is opt-in and does nothing but reveal the labels.
+async function loadSinks(withNames) {
+  if (withNames) {
+    try {
+      const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+      s.getTracks().forEach((t) => t.stop()); // released immediately; nothing is captured
+    } catch {}
+  }
+  const ds = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audiooutput');
+  $('sink').innerHTML = ds.map((d, i) => {
+    const label = d.label || (d.deviceId === 'default' ? 'System default output' : `Output ${i}`);
+    return `<option value="${d.deviceId}">${label}</option>`;
+  }).join('');
+  if (saved.sink && ds.some((d) => d.deviceId === saved.sink)) $('sink').value = saved.sink;
+}
+loadSinks(false);
+$('names').onclick = () => loadSinks(true);
+
+// ---- speaking. Lines queue rather than overlap, so mashing Enter never doubles her up.
+async function drain() {
+  if (busy || !queue.length) return;
+  busy = true;
+  const text = queue.shift();
+  const t0 = performance.now();
+  status('generating…', 'live');
+  try {
+    const r = await fetch('/speak', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        text, voiceId: $('voice').value, model: $('model').value,
+        stability: +$('stab').value, style: +$('style').value,
+      }),
+    });
+    if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.detail || e.error || r.status); }
+    const cached = r.headers.get('x-cached') === '1';
+    const url = URL.createObjectURL(await r.blob());
+    audio = new Audio(url);
+    if ($('sink').value && audio.setSinkId) { try { await audio.setSinkId($('sink').value); } catch {} }
+    status(`speaking — ${Math.round(performance.now() - t0)}ms${cached ? ' (cached, free)' : ''}`, 'live');
+    if (!cached) { sessionChars += text.length; $('session').textContent = `${sessionChars} chars this session`; }
+    addHistory(text, cached);
+    await audio.play();
+    await new Promise((res) => { audio.onended = res; audio.onerror = res; });
+    URL.revokeObjectURL(url);
+    status('ready');
+  } catch (e) {
+    status(String(e.message || e), 'err');
+  } finally { busy = false; audio = null; drain(); }
+}
+
+function addHistory(text, cached) {
+  const d = document.createElement('div');
+  d.innerHTML = `<span class="t">${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>`
+    + `<span class="x"></span>${cached ? '<span class="c">free</span>' : ''}`;
+  d.querySelector('.x').textContent = text;
+  d.onclick = () => { queue.push(text); drain(); };
+  $('hist').prepend(d);
+}
+
+function send() {
+  const t = $('text').value.trim();
+  if (!t) return;
+  queue.push(t);
+  $('text').value = '';
+  drain();
+}
+
+$('say').onclick = send;
+$('stop').onclick = () => { queue.length = 0; if (audio) { audio.pause(); audio.currentTime = 0; } status('stopped'); };
+$('text').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+});
+$('stab').addEventListener('input', () => { $('stabV').textContent = num($('stab').value); });
+$('style').addEventListener('input', () => { $('styleV').textContent = num($('style').value); });
+for (const id of ['voice', 'sink', 'model', 'stab', 'style']) $(id).addEventListener('change', save);
+
+if (saved.model) $('model').value = saved.model;
+if (saved.stab != null) { $('stab').value = saved.stab; $('stabV').textContent = num(saved.stab); }
+if (saved.style != null) { $('style').value = saved.style; $('styleV').textContent = num(saved.style); }
+</script>

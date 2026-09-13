@@ -1,0 +1,11 @@
+{
+  "name": "desktop-pet-relay",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Wallet-filtered trade relay for the desktop pet (reads the local pump.fun firehose)",
+  "main": "pet-relay.js",
+  "dependencies": {
+    "pg": "^8.13.0",
+    "ws": "^8.18.0"
+  }
+}

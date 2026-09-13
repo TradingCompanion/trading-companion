@@ -1,0 +1,22 @@
+node_modules/
+dist/
+release/
+*.png
+!icon.png
+# your own relay address and token: never committed, never packaged
+relay.local.json
+# runtime leftovers
+settings.json
+*.bad
+*.tmp
+# generated website build output (rebuild with `npm run build:web`)
+web/yui-web.js
+web/pet.css
+web/yui-sounds.js
+web/assets/
+web/downloads/
+
+# streamer-only voice tool: your ElevenLabs key and its audio cache. Never committed, never packaged.
+.elevenlabs.key
+elevenlabs.local.key
+tools/streamer-voice/cache/

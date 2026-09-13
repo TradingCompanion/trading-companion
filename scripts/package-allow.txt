@@ -1,0 +1,18 @@
+# Strings the leak scan may ignore, one per line. Only add something here once you are certain it
+# is not yours: a fixture, a placeholder, a documented example. Anything not listed fails the build.
+TestMint1111111111111111111111111111111111
+TestMint2222222222222222222222222222222222
+McPairMint33333333333333333333333333333333
+OldBagMint1111111111111111111111111111111
+SimU1atedMintxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+ws://host:port|token|wallet
+ws://host
+wss://your-relay.example:9998
+# The public relay. Deliberately shipped: it takes no token and runs on rate limits instead,
+# so that a download works with nothing but a wallet address pasted in.
+relay.trenchwaifu.fun
+ws://relay.trenchwaifu.fun:9998
+192.248.179.126
+ws://192.248.179.126:9998
+wss://relay.trenchwaifu.fun
+wss://relay.trenchwaifu.fun:9998
