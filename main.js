@@ -529,6 +529,12 @@ async function runSelfTest() {
     expect('nor at the screen edge', apart(await js('window.__petTour.box()'), await panelBox()));
     await js('window.__pet.x = 0'); await adv(0.3);
     await adv(2.5);
+    expect('the look step waits: its button is locked until something is changed', await js("document.querySelector('#tour #tourNext').disabled === true"));
+    await js('window.__petTour.next()'); await adv(0.3);
+    expect('and pressing it locked does nothing', (await tourSt()).step === 'look');
+    await js("document.querySelector('#panel #fBust').value = '0.6'; document.querySelector('#panel #fBust').dispatchEvent(new Event('input'))"); await adv(0.6);
+    expect('changing her look unlocks the button but does not move on', (await tourSt()).step === 'look' && await js("document.querySelector('#tour #tourNext').disabled === false"));
+    await js("document.querySelector('#panel #fBust').value = '0.36'; document.querySelector('#panel #fBust').dispatchEvent(new Event('input'))"); await adv(0.3);
     await js('window.__petTour.next()'); await adv(0.3);
     ts = await tourSt();
     expect('next moves to the wallet step', ts.step === 'wallet');
@@ -561,7 +567,9 @@ async function runSelfTest() {
     expect('reset clears the name and settings', settings.userName === '' && settings.tourDone === false && settings.bust === defaultSettings().bust);
     expect('and starts the tour over', ts.active && ts.step === 'name');
     await js("window.__petTour.name('Alex')"); await adv(0.2);   // leave the name in place for the rest of the run
-    await js('window.__petTour.skip(); window.__petTour.skip(); window.__petTour.next()'); await adv(0.3);
+    await js('window.__petTour.skip(); window.__petTour.skip()'); await adv(0.2);
+    await js("document.querySelector('#panel #fBust').dispatchEvent(new Event('input'))"); await adv(0.6);
+    await js('window.__petTour.next()'); await adv(0.3);
     ts = await tourSt();
     expect('the wallet step waits for the relay to say Live', ts.step === 'wallet');
     await js("window.__petRelayMsg({ type: 'hello', wallets: ['w'], positions: [], firehose: true })"); await adv(0.6);
@@ -577,7 +585,9 @@ async function runSelfTest() {
     // a replay while the wallet is already live: the wallet step passes on its own
     await js('window.__petTour.start()'); await adv(0.2);
     await js("window.__petTour.name('Alex')"); await adv(0.2);
-    await js('window.__petTour.skip(); window.__petTour.skip(); window.__petTour.next()'); await adv(2.2);
+    await js('window.__petTour.skip(); window.__petTour.skip()'); await adv(0.2);
+    await js("document.querySelector('#panel #fBust').dispatchEvent(new Event('input'))"); await adv(0.6);
+    await js('window.__petTour.next()'); await adv(2.2);
     ts = await tourSt();
     expect('a replay with the wallet live moves past the wallet step by itself', ts.step === 'testbuy');
     await js('window.__petTour.skip(); window.__petTour.next(); window.__petTour.next()'); await adv(0.3);

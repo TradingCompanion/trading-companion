@@ -892,8 +892,8 @@ const TOUR = [
     wait: 'waiting for a click', flag: 'panel', skip: 'Skip', say: (y) => `Click me${y ? ', ' + y : ''}~` },
   { key: 'throw', eyebrow: 'Step 2 of 7', title: 'Pick me up', body: 'Grab me anywhere and drag. Let go while moving and I fly. I land on my feet. Mostly.',
     wait: 'waiting for a throw', flag: 'throw', skip: 'Skip', say: (y) => `Throw me${y ? ', ' + y : ''}! I can take it~` },
-  { key: 'look', eyebrow: 'Step 3 of 7', title: 'Dress me up', body: 'The Look tab: outfit, hair, the shape of me. Everything applies live and is remembered.',
-    highlight: 'look', flag: 'look', cta: 'Next', say: () => 'Make me cute~' },
+  { key: 'look', eyebrow: 'Step 3 of 7', title: 'Dress me up', body: 'The Look tab: outfit, hair, the shape of me. Everything applies live and is remembered. Take your time — press the button when you are happy.',
+    highlight: 'look', unlock: 'look', cta: 'Done dressing', say: () => 'Make me cute~' },
   { key: 'wallet', eyebrow: 'Step 4 of 7', title: 'Connect your wallet', body: "In the Wallet tab: paste the public address you buy from, then press Connect. When it says Live, I can see your trades. I only read the address — I never ask you to sign anything.",
     highlight: 'wallet', wait: 'waiting for Live', flag: 'wallet', skip: 'Later', say: () => 'Whose bags am I watching?' },
   { key: 'testbuy', eyebrow: 'Step 5 of 7', title: 'Make a small test buy', body: "Any coin, any size — I react the moment it lands, and my board shows the position. Sell it afterwards to see the other side.",
@@ -934,7 +934,7 @@ function tourGo(i) {
     + (st.input ? `<input type="text" id="tourName" placeholder="Alex" maxlength="24" spellcheck="false" value="${esc(y)}">` : '')
     + (st.demo ? `<div class="demo"><button class="ghost" data-demo="profit">Profit</button><button class="ghost" data-demo="loss">Loss</button><button class="ghost" data-demo="buy">Buy</button></div>` : '')
     + `<div class="actions">`
-    + (st.cta ? `<button id="tourNext">${esc(st.cta)}</button>` : `<span class="wait">${esc(st.wait)}</span>`)
+    + (st.cta ? `<button id="tourNext"${st.unlock && !tourFlags[st.unlock] ? ' disabled title="Change something first"' : ''}>${esc(st.cta)}</button>` : `<span class="wait">${esc(st.wait)}</span>`)
     + (st.skip ? `<button class="ghost" id="tourSkip">${esc(st.skip)}</button>` : '')
     + `<span class="dots">${TOUR.map((_, k) => `<i class="${k < i ? 'done' : k === i ? 'on' : ''}"></i>`).join('')}</span></div>`;
   tourEl.hidden = false;
@@ -970,6 +970,8 @@ function tourTick() {
     if (st.flag === 'panel') sound('click');
     tourGo(tourStep + 1);
   }
+  // a step that unlocks its button once the user has done the thing: they continue when ready
+  if (st.unlock && tourFlags[st.unlock]) { const b = tourEl.querySelector('#tourNext'); if (b && b.disabled) { b.disabled = false; b.title = ''; say('Ehehe, cute! Keep going, or press the button~', 4); } }
 }
 // beside her, on the side the panel is not using, following her as she moves
 let tourLeft = -1, tourTop = -1;

@@ -284,6 +284,8 @@
   #tour button:hover { filter: brightness(1.06); } #tour button:active { transform: translateY(1px); }
   #tour button.ghost { background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1); box-shadow: none; color: var(--dim); }
   #tour button.ghost:hover { color: var(--txt); background: rgba(255,255,255,.1); filter: none; }
+  #tour button[disabled] { background: rgba(255,255,255,.06); color: var(--faint); box-shadow: none; cursor: default; }
+  #tour button[disabled]:hover { filter: none; transform: none; }
   #tour .demo { display: flex; gap: 7px; margin: 0 0 12px; }
   #tour .demo button { flex: 1; padding: 0; }
   #tour .demo button[data-demo=profit] { color: #3fe0a5; } #tour .demo button[data-demo=loss] { color: #ff5c8a; } #tour .demo button[data-demo=buy] { color: #a58cff; }
