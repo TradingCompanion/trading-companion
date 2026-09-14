@@ -31,6 +31,9 @@
     content: ""; position: absolute; left: 50%; bottom: -10px; margin-left: -8px;
     border: 8px solid transparent; border-top-color: #f6a5c6; border-bottom: 0;
   }
+  /* when she hangs head-down the bubble sits under her head, so the tail points up */
+  #bubble.below { transform: translate(-50%, 0); }
+  #bubble.below::after { bottom: auto; top: -10px; border-top: 0; border-bottom: 8px solid #f6a5c6; }
 
 
   /* Her panel's typefaces, bundled so they are there offline (both OFL; Rubik and Outfit are variable fonts) */

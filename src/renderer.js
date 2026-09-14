@@ -135,13 +135,19 @@ function updateView() {
   const h = model.height;
   const c = Math.cos(pet.theta), sn = Math.sin(pet.theta);
   const ox = -sn * h * 0.5, oy = c * h * 0.5;
-  const cx = pet.x + ox;
-  const cy = pet.y + pet.bob + pet.crouch + oy + h * 0.12;
+  let cx = pet.x + ox;
+  let cy = pet.y + pet.bob + pet.crouch + oy + h * 0.12;
+  // The canvas lands on whole device pixels. Translated by a fraction, the compositor resamples
+  // her every frame she breathes, and her outline shimmers. The camera is then moved to match the
+  // snapped canvas, so she does not shift inside it by the same fraction.
+  const dpr = window.devicePixelRatio || 1;
+  canvasLeft = Math.round((W / 2 + cx * ppu - CS / 2) * dpr) / dpr;
+  canvasTop = Math.round((H / 2 - cy * ppu - CS / 2) * dpr) / dpr;
+  cx = (canvasLeft + CS / 2 - W / 2) / ppu;
+  cy = (H / 2 - canvasTop - CS / 2) / ppu;
   camera.position.set(cx, cy, camDist);
   camera.lookAt(cx, cy, 0);
-  canvasLeft = W / 2 + cx * ppu - CS / 2;
-  canvasTop = H / 2 - cy * ppu - CS / 2;
-  canvas.style.transform = fx.style.transform = `translate(${canvasLeft.toFixed(2)}px, ${canvasTop.toFixed(2)}px)`;
+  canvas.style.transform = fx.style.transform = `translate(${canvasLeft.toFixed(3)}px, ${canvasTop.toFixed(3)}px)`;
   // contact shadow: sits on the floor under her, fades as she rises
   const lift = clamp((pet.y - groundY) / (h * 0.9), 0, 1);
   shadow.position.set(pet.x + ox * 0.6, groundY + 0.004, 0.04);
@@ -340,29 +346,38 @@ window.__petOutline = (scale) => {
 // ---------------------------------------------------------------- speech bubble
 const bubbleEl = document.getElementById('bubble');
 let bubbleUntil = -1;
+let bubbleW = 200, bubbleH = 40;   // measured once per message, not per frame (that forces a reflow)
 function say(text, secs) {
-  if (!bubbleEl) return;
+  // Nothing to speak from until she is on screen: shown now, the bubble would sit at the window's
+  // top-left corner until the next frame found a head to hang it on.
+  if (!bubbleEl || !model) return;
   bubbleEl.textContent = text;
   bubbleEl.classList.add('show');
+  bubbleW = bubbleEl.offsetWidth || bubbleW; bubbleH = bubbleEl.offsetHeight || bubbleH;
   bubbleUntil = T + (secs ?? Math.min(9, 2.2 + text.length * 0.07));
+  updateBubble();   // placed before it is ever painted, so it never flashes at its last position
 }
 function updateBubble() {
-  if (!bubbleEl || bubbleUntil < 0 || !model) return;
-  if (T > bubbleUntil) { bubbleEl.classList.remove('show'); bubbleUntil = -1; return; }
-  _v.setFromMatrixPosition(model.bones.head.matrixWorld);
-  // Anchored to her crown, not the head bone (which sits at her chin). The Head slider scales the
-  // head bone and her hair with it, so the crown offset has to scale too — at a fixed offset the
-  // bubble lands on her forehead as soon as her head is made bigger.
+  if (!bubbleEl || bubbleUntil < 0) return;
+  if (T > bubbleUntil || !model) { bubbleEl.classList.remove('show'); bubbleUntil = -1; return; }
+  // The bubble hangs off her crown along her own "up" — the head-from-neck direction on screen —
+  // so it stays over her head however she is tilted, and goes under it when she hangs head-down.
+  // The head bone sits at her chin, so the distance is a bit more than half a head; the Head
+  // slider scales the head and hair, so the distance scales with it.
+  const hp = boneScreen('head'), np = boneScreen('neck') || boneScreen('upperChest') || boneScreen('chest');
+  if (!hp) return;
+  let ux = 0, uy = -1;
+  if (np) { const dx = hp.x - np.x, dy = hp.y - np.y, l = Math.hypot(dx, dy) || 1; ux = dx / l; uy = dy / l; }
   const headScale = (model.rawBones && model.rawBones.head && model.rawBones.head.scale.y) || 1;
-  _v.y += model.height * 0.155 * headScale;
-  _v.project(camera);
-  let sx = canvasLeft + (_v.x + 1) / 2 * CS;
-  const sy = canvasTop + (1 - _v.y) / 2 * CS;
-  if (sign && sign.mesh.visible) sx += signOnLeft() ? sizePx * 0.62 : -sizePx * 0.62; // don't cover the sign
-  const bx = clamp(sx, 140, W - 140);
-  let top = Math.max(70, sy - 8);
+  const R = model.height * 0.155 * headScale * ppu;
+  const below = uy > 0.35;                         // hanging head-down: bubble under the head, tail up
+  bubbleEl.classList.toggle('below', below);
+  let ax = hp.x + ux * R, ay = hp.y + uy * R;
+  // a board held high can sit in front of her face: lift the bubble clear of it rather than aside
   const box = signScreenBox();
-  if (box && bx + 140 > box.l && bx - 140 < box.r && top > box.t - 30) top = Math.max(58, box.t - 14);
+  if (box && !below && ax + bubbleW / 2 > box.l && ax - bubbleW / 2 < box.r && ay > box.t - 12 && ay - bubbleH < box.b) ay = box.t - 12;
+  const bx = clamp(ax, bubbleW / 2 + 8, W - bubbleW / 2 - 8);
+  const top = below ? clamp(ay + 10, 8, H - bubbleH - 8) : clamp(ay - 8, bubbleH + 14, H - 8);
   bubbleEl.style.left = `${bx.toFixed(1)}px`;
   bubbleEl.style.top = `${top.toFixed(1)}px`;
 }
@@ -2094,7 +2109,7 @@ const SIGN_STYLES = [
   grad.addColorStop(0.1, '#ffffff'); grad.addColorStop(0.9, acc);
   sTxt(g, c.amount, SW / 2, 296, font, grad, SW - 110);
   pill(g, c.sub, 428, '500 54px Rubik, "Segoe UI", system-ui, sans-serif', 'rgba(255,255,255,0.07)', 'rgba(255,255,255,0.14)', acc);
-  if (c.foot) sTxt(g, c.foot.toUpperCase(), SW / 2, 540, '400 30px Rubik, "Segoe UI", system-ui, sans-serif', '#6f6785', SW - 130, '3px');
+  if (c.foot) sTxt(g, c.foot.toUpperCase(), SW / 2, 538, '500 42px Rubik, "Segoe UI", system-ui, sans-serif', '#d9d3e8', SW - 130, '4px');
 } },
 ];
 // Canvas text does not pull a @font-face in on its own, so the board's typefaces are requested up
@@ -2895,6 +2910,12 @@ function bonePx(name) {
   _fv.setFromMatrixPosition(b.matrixWorld);
   return projFx(_fv);
 }
+// The same bone in *window* px: bonePx is local to the render canvas, which is translated to
+// follow her, so anything laid out in the DOM around her has to add that translation back.
+function boneScreen(name) {
+  const p = bonePx(name);
+  return p && { x: p.x + canvasLeft, y: p.y + canvasTop };
+}
 
 // Blood drawn as a stroked line reads as a red stick: constant width, blunt ends, no direction.
 // This lays down a filled ribbon instead — widest at the wound, tapering to the drip — by walking
@@ -2996,9 +3017,12 @@ function woundAnchor(w) {
 function woundKeyNow() {
   if (!model || !model.figure) return '';
   if (!pet.wounds.length || pet.hurt <= 0) return 'none';
-  return figureTexKey + '|' + Math.round(pet.hurt * 20) + '|' + pet.wounds.map((w) => {
+  // Each repaint copies and re-uploads two 2048² sheets — a visible hitch — so the steps are
+  // coarse: half-second stages while a wound is opening, two more as it sets, and eight shades of hurt.
+  return figureTexKey + '|' + Math.round(pet.hurt * 8) + '|' + pet.wounds.map((w) => {
     const age = T - w.born;
-    return w.def.type + w.def.thr + ':' + (age < 25 ? Math.round(age / 0.4) : 'set') + (w.anchor === undefined ? '?' : '');
+    const stage = age < 5 ? Math.round(age / 0.5) : age < 12 ? 'a' : age < 25 ? 'b' : 'set';
+    return w.def.type + w.def.thr + ':' + stage + (w.anchor === undefined ? '?' : '');
   }).join(',');
 }
 function paintWounds() {
@@ -3192,12 +3216,14 @@ let paused = false; // set by the test harness, which steps manually
 // the one that is never drawn. Left to requestAnimationFrame she renders at the monitor's refresh
 // rate — 180fps on a fast panel — to show a girl breathing. Cap that, and once nothing has moved
 // for a few seconds drop further still. Anything that actually animates pulls her straight back up.
-const FPS_ACTIVE = 60, FPS_CALM = 30;
+// Smoothness over savings: full refresh rate while anything moves (a 144 cap only bites on very
+// fast panels), 60 when she is standing still. The old 60/30 made every fidget stutter.
+const FPS_ACTIVE = 144, FPS_CALM = 60;
 const CALM_AFTER = 2.5;   // seconds of stillness before easing off; covers a settling jiggle
 let calmFor = 0;
 let drawnFrames = 0;   // frames actually rendered, so the cap can be measured rather than assumed
 function busy() {
-  return pet.state !== 'idle' || !pet.onGround || cursor.down || panelOpen
+  return pet.state !== 'idle' || !!pet.micro || !pet.onGround || cursor.down || panelOpen
     || sparks.length > 0 || pet.glow > 0
     || Math.abs(pet.vx) > 0.01 || Math.abs(pet.vy) > 0.01 || Math.abs(pet.theta) > 0.01
     || (sign && sign.phase !== 'hidden' && sign.phase !== 'held')

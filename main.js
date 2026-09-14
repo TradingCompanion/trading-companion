@@ -597,6 +597,9 @@ async function runSelfTest() {
     expect('there are eleven board styles', styles.length === 11);
     for (let i = 0; i < styles.length; i++) { await js('window.__petSetStyle(' + i + ')'); await adv(0.5); }
     expect('every style renders without error', (await signState()).visible);
+    // the default look, with a market cap line on it, at rest
+    await js('window.__petSetStyle(10)'); await adv(0.6); await sleep(300);
+    await shot('24b-board-aurora.png');
     await js('window.__petSetStyle(0)');
     await adv(0.6);
 
