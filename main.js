@@ -625,10 +625,10 @@ async function runSelfTest() {
     // paste into the wallet field: the edit roles must survive the hidden menu bar
     await js("[...document.querySelectorAll('#panel .tabs button')].find(b=>b.dataset.tab==='wallet').click()"); await adv(0.2);
     const { clipboard } = require('electron');
-    clipboard.writeText('4Nd1mBQtrMJVYVfKf2PJy9NZaZdrb8TBH3a4a8Mo4CkT');
+    clipboard.writeText('PasteTestWa11etAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
     await js("document.querySelector('#panel #fWallets').focus(); document.querySelector('#panel #fWallets').value = ''");
     win.webContents.paste(); await sleep(300);
-    expect('paste works in the wallet field', await js("document.querySelector('#panel #fWallets').value") === '4Nd1mBQtrMJVYVfKf2PJy9NZaZdrb8TBH3a4a8Mo4CkT');
+    expect('paste works in the wallet field', await js("document.querySelector('#panel #fWallets').value") === 'PasteTestWa11etAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
     await js("document.querySelector('#panel #fWallets').value = ''");
     expect('she comes in Huge by default', defaultSettings().sizePx === 640);
     await js('window.__petPanel(false)'); await adv(0.2);

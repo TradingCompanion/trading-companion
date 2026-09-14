@@ -16,3 +16,7 @@ ws://relay.trenchwaifu.fun:9998
 ws://192.248.179.126:9998
 wss://relay.trenchwaifu.fun
 wss://relay.trenchwaifu.fun:9998
+
+# self-test fixtures in main.js: a placeholder mint and a wallet-shaped string for the paste check
+TestBuyMint111111111111111111111111111111111
+PasteTestWa11etAAAAAAAAAAAAAAAAAAAAAAAAAAAA
