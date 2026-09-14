@@ -590,7 +590,7 @@ function tradesSeenText() {
 const fmtNum = (n) => (Math.abs(n) >= 100 ? n.toFixed(0) : Math.abs(n) >= 10 ? n.toFixed(1) : Math.abs(n) >= 1 ? n.toFixed(2) : n.toFixed(3));
 // keep the open positions and the session total in step with our own fills
 function trackTrade(m) {
-  demoPos = null; // a real fill takes the board back
+  demoPos = null; scorecardUntil = -1; // a real fill takes the board back from a demo or the day's card
   // realised totals only make sense summed in one currency; SOL is the pair for almost everything
   lastTradeAt = T;
   if (m.pnl != null && (m.quote || 'SOL') === 'SOL') { sessionPnl += m.pnl; sessionTrades++; }
@@ -760,7 +760,7 @@ function sellNudges() {
       p.nudgedAt = T;
       const y = who();
       say(`You've held ${c.title} for ${Math.round(heldMin)} min and it's +${pct.toFixed(0)}%${y ? ', ' + y : ''} — just saying~`, 7, 1);
-      if (pet.state === 'idle') setState('notice');
+      if (pet.state === 'idle' && !quiet('Reactions')) setState('notice');
       return;
     }
   }
@@ -2421,7 +2421,6 @@ function listContent() {
   if (!rows.length) return null;
   rows.sort((a, b) => b.n - a.n);
   const lines = rows.slice(0, 6);
-  const total = rows.reduce((s, r) => s + (r.tone === 0 ? 0 : 0), 0);
   return { id: 'list', title: 'OPEN BAGS', lines, amount: '', sub: rows.length > 6 ? `+${rows.length - 6} more` : '', foot: null, tone: lines[0].tone, text: lines.map((l) => l.sym + l.pnl + l.pct).join('|') };
 }
 // the flipped board, in the Aurora look whatever style the single board uses

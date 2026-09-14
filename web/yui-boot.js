@@ -160,6 +160,7 @@
 
     quit: function () {},
     openSoundsFolder: function () {}, rescanSounds: function () {},
+    resetSettings: function () { try { localStorage.removeItem(STORE); } catch (e) {} location.reload(); },   // back to how she came, browser style
   };
 
   // ---- right-click and double-click belong to the page ----------------------------------------
