@@ -324,11 +324,29 @@ app.whenReady().then(async () => {
     const wa = workArea();
     win.setBounds({ x: wa.x, y: wa.y, width: wa.width, height: wa.height });
   });
-  if (TEST) runSelfTest();
+  if (TEST) { if (process.env.PET_PROBE) runProbe(); else runSelfTest(); }
 });
 
 app.on('before-quit', () => { if (saveTimer) writeSettingsNow(); });
 app.on('window-all-closed', () => app.quit());
+
+// ---- pose probe (PET_TEST=1 PET_PROBE='<js>|<seconds>'): run one expression, advance, screenshot, quit.
+// For tuning a pose or a look by eye in ten seconds instead of a full self-test run.
+async function runProbe() {
+  const outDir = process.env.PET_TEST_OUT || __dirname;
+  const wc = win.webContents;
+  const js = (code) => wc.executeJavaScript(code);
+  try {
+    await new Promise((r) => ipcMain.once('model-ready', r));
+    await js('window.__petSyntheticOnly = true'); await js('window.__petAdvance(1.5)');
+    const [code, secs] = process.env.PET_PROBE.split('|');
+    await js(code); await js('window.__petAdvance(' + (Number(secs) || 1) + ')');
+    await new Promise((r) => setTimeout(r, 200));
+    fs.writeFileSync(path.join(outDir, 'probe.png'), (await wc.capturePage()).toPNG());
+    fs.writeFileSync(path.join(outDir, 'probe.json'), JSON.stringify(await js('window.__petInfo()')));
+  } catch (e) { console.error('[probe]', e.message); }
+  app.quit();
+}
 
 // ---- headless self-test (PET_TEST=1): deterministic screenshots of every state ----
 async function runSelfTest() {

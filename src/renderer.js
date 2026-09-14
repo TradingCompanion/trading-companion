@@ -1764,12 +1764,11 @@ function updateState(dt) {
     groundStep(dt);
     defaultRate = 5;
     const w = envelope(pet.t, 4.6, 0.7);
-    // arms hanging close to her, forearms turned in so the hands meet low in front of her
-    mixPose('leftUpperArm', 0.12, 0.42, -1.02, w);
-    mixPose('rightUpperArm', 0.12, -0.42, 1.02, w);
-    mixPose('leftLowerArm', 0.1, -1.05, -0.1, w);
-    mixPose('rightLowerArm', 0.1, 1.05, 0.1, w);
-    mixPose('leftHand', 0.4, 0, -0.25, w); mixPose('rightHand', 0.4, 0, 0.25, w);
+    // arms hanging close to her, swung a little forward, forearms turned in so the hands meet low in front
+    const [ux, uy, uz] = SAD_TUNE.ua, [lx, ly, lz] = SAD_TUNE.la, [hx, hy, hz] = SAD_TUNE.hd;
+    mixPose('leftUpperArm', ux, uy, -uz, w);   mixPose('rightUpperArm', ux, -uy, uz, w);
+    mixPose('leftLowerArm', lx, -ly, -lz, w);  mixPose('rightLowerArm', lx, ly, lz, w);
+    mixPose('leftHand', hx, hy, -hz, w);       mixPose('rightHand', hx, -hy, hz, w);
     mixPose('leftShoulder', 0.12, 0, 0.16, w); mixPose('rightShoulder', 0.12, 0, -0.16, w);   // slumped
     // two sobs, a short shoulder shudder each
     const sob = (pet.t > 1.2 && pet.t < 1.7) || (pet.t > 2.6 && pet.t < 3.1) ? Math.sin(pet.t * 28) * 0.03 : 0;
@@ -1902,6 +1901,8 @@ let TWO_GRIP = { amt: 1.15, roll: -1.50 };    // fingers curl ONTO the board fac
 // comes from the elbows, which barely narrows them
 // the wrist roll matters: without it her palms face up and the hands read upside down
 let HOLD_TWO = { ua: [0, 0, 0.45], la: [0, 1.30, 0.70], hd: [-1.50, 0, 0] };
+// the loss pose's arms (right side; the left is mirrored): upper arm, forearm, hand
+let SAD_TUNE = { ua: [-0.5, 0.1, 1.12], la: [0, 1.0, 0.9], hd: [0.3, 0, 0.2] };
 let TWO_BOTTOM = 0.40;   // board bottom, in body heights above her feet (over her stomach, under the bust)
 let TWO_FWD = 0.10;      // just clear of her stomach (measured front surface ~0.083)
 const FINGERS = ['Index', 'Middle', 'Ring', 'Little'];
@@ -3623,6 +3624,7 @@ window.__petPoseTarget = poseTarget;
 window.__petSignPose = (p) => { if (sign) sign.pose = p; };
 window.__petSignTwo = (v) => { if (sign) { sign.two = v; sign.text = ''; } };
 window.__petTwoGrip = (amt, roll) => { TWO_GRIP = { amt, roll }; if (sign) sign.text = ''; };
+window.__petSadTune = (ua, la, hd) => { SAD_TUNE = { ua, la, hd }; };
 window.__petTwoTune = (ua, la, hd, bottom, fwd) => { HOLD_TWO = { ua, la, hd }; if (bottom != null) TWO_BOTTOM = bottom; if (fwd != null) TWO_FWD = fwd; };
 window.__petBustFront = () => { if (!model) return null; const v = new THREE.Vector3(); let maxZ = -9; for (const n of ['J_Sec_L_Bust2', 'J_Sec_R_Bust2', 'J_Sec_L_Bust1', 'J_Sec_R_Bust1']) { const b = model.vrm.scene.getObjectByName(n); if (!b) continue; b.getWorldPosition(v); maxZ = Math.max(maxZ, v.z); } return { bustTipZ: +(maxZ / model.height).toFixed(3), bustScale: model.bust.nodes[0] ? +model.bust.nodes[0].scale.x.toFixed(2) : 0 }; };
 window.__petTorsoFront = () => { if (!model) return null; const v = new THREE.Vector3(); let maxZ = -9, at = 0; model.vrm.scene.traverse((o) => { if (!o.isSkinnedMesh && !o.isMesh) return; const p = o.geometry && o.geometry.attributes.position; if (!p) return; for (let i = 0; i < p.count; i += 5) { v.fromBufferAttribute(p, i); o.localToWorld(v); const ay = (v.y - pet.y) / model.height; if (ay < 0.45 || ay > 0.92) continue; if (v.z > maxZ) { maxZ = v.z; at = ay; } } }); return { frontZ: +(maxZ / model.height).toFixed(3), atHeight: +at.toFixed(2) }; };
