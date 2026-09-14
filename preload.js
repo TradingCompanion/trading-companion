@@ -18,6 +18,8 @@ contextBridge.exposeInMainWorld('pet', {
   defaultModel: () => ipcRenderer.send('default-model'),
   quit: () => ipcRenderer.send('quit'),
   resetSettings: () => ipcRenderer.send('reset-settings'),
+  openExternal: (url) => ipcRenderer.send('open-external', url),
+  setDisplay: (id) => ipcRenderer.send('set-display', id),
   openSoundsFolder: () => ipcRenderer.send('open-sounds-folder'),
   rescanSounds: () => ipcRenderer.send('rescan-sounds'),
 });

@@ -33,7 +33,7 @@ class Spring {
 const bridge = window.pet || {
   // fallback so the renderer also runs in a plain browser for development
   onCursor() {}, onSettings() {}, onModel() {}, onCommand() {},
-  setIgnore() {}, contextMenu() {}, editMenu() {}, saveState() {}, modelReady() {}, modelFailed() {}, requestModel() {}, log: console.log,
+  setIgnore() {}, contextMenu() {}, editMenu() {}, openExternal(u) { window.open(u, '_blank'); }, setDisplay() {}, saveState() {}, modelReady() {}, modelFailed() {}, requestModel() {}, log: console.log,
   saveSettings() {}, pickModel() {}, defaultModel() {}, quit() {}, openSoundsFolder() {}, rescanSounds() {},
 };
 
@@ -310,8 +310,12 @@ function playAssigned(name, volume = 1) {
   const ph = PHRASES[name];
   if (ph) try { logSound(name); ensureAudio().play(ph.seq, { pitch: cfg?.pitch ?? 1, volume }); } catch (e) { bridge.log('sound: ' + e.message); }
 }
+// Quiet mode: each kind of noise has its own switch, and "do not disturb" silences all of them
+// until a time. She keeps tracking trades and standing there either way.
+const dndOn = () => !!cfg && Number(cfg.dndUntil) > Date.now();
+const quiet = (kind) => !cfg || dndOn() || cfg['quiet' + kind] === true;   // kind: Bubbles | Reactions | Board | Sounds
 function sound(event, o = {}) {
-  if (!cfg || cfg.muted) return;
+  if (!cfg || cfg.muted || quiet('Sounds')) return;
   const name = (cfg.sounds || {})[event];
   if (!name) return;
   if (T - (soundCooldown[event] ?? -99) < (o.cooldown ?? 0.3)) return;
@@ -354,7 +358,7 @@ let bubbleW = 200, bubbleH = 40;   // measured once per message, not per frame (
 function say(text, secs, tone = 0) {
   // Nothing to speak from until she is on screen: shown now, the bubble would sit at the window's
   // top-left corner until the next frame found a head to hang it on.
-  if (!bubbleEl || !model) return;
+  if (!bubbleEl || !model || quiet('Bubbles')) return;
   bubbleEl.textContent = text;
   bubbleEl.classList.toggle('good', tone > 0);
   bubbleEl.classList.toggle('bad', tone < 0);
@@ -553,6 +557,7 @@ function handleRelay(m) {
       if (price > 0) p.price = price;
       if (m.quote === 'USDC' || m.quote === 'SOL') p.quote = m.quote;
       if (QUOTE_KINDS.has(m.quoteKind)) p.quoteKind = m.quoteKind;
+      marketWatch(p);
     }
   } else if (m.type === 'trade') {
     cleanTrade(m);
@@ -607,38 +612,222 @@ function trackTrade(m) {
   const price = m.tokens > 0 ? m.amount / m.tokens : 0;
   if (price > 0) o.price = price;
   applyPosition(m.mint, o);
+  recordFill(m);
 }
 function reactToTrade(t) {
   const sym = t.symbol ? `$${t.symbol}` : `${(t.mint || '').slice(0, 4)}…`;
   const money = (n) => signMoney(n, t.quote, t.quoteKind);
-  const busy = pet.state === 'grabbed' || pet.state === 'falling';
   pet.lastInteraction = T;
+  // asleep: the jolt awake is the reaction this time (she still says her line)
+  const woke = pet.state === 'sleep';
+  if (woke) setState('wake');
+  const busy = pet.state === 'grabbed' || pet.state === 'falling' || woke;
+  // reactions off (quiet mode / do not disturb): the numbers still move, she does not
+  const react = !quiet('Reactions');
+  const y = who();
   if (t.side === 'buy') {
+    // buying back a coin sold at a loss a moment ago: she does not stop you, she just looks at you
+    const ls = t.mint && lastLossSell.get(t.mint);
+    if (react && cfg?.guard !== false && ls && T - ls.at < GUARD_WINDOW) {
+      sound('hover', { cooldown: 1 });
+      say(pick([`…are you sure${y ? ', ' + y : ''}?`, `${sym} again? You just took a loss on it${y ? ', ' + y : ''}…`, `Chasing it${y ? ', ' + y : ''}? Mm.`]), 5, -1);
+      if (!busy) setState('guard');
+      return;
+    }
     sound('buy', { cooldown: 1.4 }); say(line(LINES.buy, sym, money(t.amount)));
-    if (!busy) setState('notice');
+    if (react && !busy) setState('notice');
     return;
   }
   const pnl = t.pnl;
-  if (pnl == null) { sound('sell'); say(`Sold ${sym} for ${money(t.amount)}~`); if (!busy) setState('notice'); return; }
+  if (pnl == null) { sound('sell'); say(`Sold ${sym} for ${money(t.amount)}~`); if (react && !busy) setState('notice'); return; }
   const pct = t.pnlPct ?? 0;
   const thr = t.quote === 'USDC' ? 3 : 0.02;
   if (pnl >= thr) {
     const big = (t.quote === 'USDC' ? pnl >= 150 : pnl >= 1) || pct >= 100;
     sound(big ? 'bigProfit' : 'profit', { cooldown: 1.2 });
     say(line(big ? LINES.bigProfit : LINES.profit, sym, '+' + money(pnl), pct), undefined, 1);
-    if (!busy) { pet.happy = 1; setState('cheer'); }
-    addGlow(big ? 1 : 0.7); healHurt(big ? 0.6 : 0.35);
+    moodShift(big ? 0.5 : 0.35);
+    if (react && !busy) { pet.happy = 1; setState('cheer'); }
+    if (react) { addGlow(big ? 1 : 0.7); healHurt(big ? 0.6 : 0.35); }
   } else if (pnl <= -thr) {
     const big = (t.quote === 'USDC' ? pnl <= -150 : pnl <= -1) || pct <= -50;
     sound(big ? 'bigLoss' : 'loss', { cooldown: 1.2 });
     say(line(big ? LINES.bigLoss : LINES.loss, sym, '−' + money(pnl), pct), undefined, -1);
-    if (!busy) setState('comfort');
-    addHurt(big ? 0.75 : 0.45);
+    moodShift(big ? -0.5 : -0.35);
+    if (react && !busy) setState('comfort');
+    if (react) addHurt(big ? 0.75 : 0.45);
   } else {
     sound('sell', { cooldown: 1.2 }); say(line(LINES.flat, sym, money(t.amount)));
-    if (!busy) setState('notice');
+    if (react && !busy) setState('notice');
+  }
+  if (react) checkMilestones(t);
+}
+
+// ---------------------------------------------------------------- mood
+// A win streak leaves her bouncy for an hour; a run of losses leaves her quiet and worried until
+// the next green. It decays back to neutral on its own and colours her fidgets, face and greetings.
+function moodShift(d) { pet.mood = clamp(pet.mood + d, -1, 1); }
+const moodUp = () => pet.mood > 0.4, moodDown = () => pet.mood < -0.4;
+
+// ---------------------------------------------------------------- the "don't chase" look
+const GUARD_WINDOW = 60;   // seconds after a losing sell in which buying the same coin earns the look
+const lastLossSell = new Map();   // mint -> { at, pnl }
+
+// ---------------------------------------------------------------- the day's numbers, streaks, milestones
+// Kept in settings so a restart mid-day does not lose them; rolled over at midnight, when the
+// previous day's card is shown for a moment.
+const dayKey = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+function freshStats(day) { return { day, trades: 0, pnl: 0, wins: 0, losses: 0, best: null, worst: null, streak: 0 }; }
+function dayStats() {
+  if (!cfg) return freshStats(dayKey());
+  const today = dayKey();
+  if (!cfg.stats || cfg.stats.day !== today) {
+    const prev = cfg.stats && cfg.stats.trades > 0 ? cfg.stats : null;
+    saveCfg({ stats: freshStats(today), yesterday: prev || cfg.yesterday || null });
+    if (prev && model) showScorecard(prev, 'YESTERDAY');   // the day just ended: here is how it went
+  }
+  return cfg.stats;
+}
+// a realised fill (sell with a pnl), in SOL-equivalent
+function recordFill(m) {
+  if (!cfg) return;
+  if (m.side === 'sell' && m.pnl != null && m.pnl < 0) lastLossSell.set(m.mint, { at: T, pnl: m.pnl });
+  const st = dayStats();
+  const total = (Number(cfg.totalTrades) || 0) + 1;
+  if (m.side === 'sell' && m.pnl != null && (m.quote || 'SOL') === 'SOL') {
+    st.trades++; st.pnl += m.pnl;
+    const sym = m.symbol ? '$' + m.symbol : m.mint.slice(0, 4) + '…';
+    if (m.pnl > 0) { st.wins++; st.streak = st.streak > 0 ? st.streak + 1 : 1; if (!st.best || m.pnl > st.best.pnl) st.best = { sym, pnl: m.pnl }; }
+    else if (m.pnl < 0) { st.losses++; st.streak = st.streak < 0 ? st.streak - 1 : -1; if (!st.worst || m.pnl < st.worst.pnl) st.worst = { sym, pnl: m.pnl }; }
+  }
+  saveCfg({ stats: st, totalTrades: total });
+}
+// something worth a confetti cannon
+function checkMilestones(t) {
+  if (!cfg || !cfg.stats) return;
+  const st = cfg.stats, ms = { ...(cfg.milestones || {}) }, y = who();
+  let text = null;
+  if (st.streak >= 5 && ms.streak !== st.day) { ms.streak = st.day; text = `${st.streak} greens in a row${y ? ', ' + y : ''}!!`; }
+  else if (st.pnl >= 1 && !ms.solDay) { ms.solDay = st.day; text = `Your first 1 SOL day${y ? ', ' + y : ''}!!`; }
+  else if ([100, 500, 1000, 5000].includes(cfg.totalTrades) && ms.trades !== cfg.totalTrades) { ms.trades = cfg.totalTrades; text = `${cfg.totalTrades} trades together${y ? ', ' + y : ''}~`; }
+  if (!text) return;
+  saveCfg({ milestones: ms });
+  celebrate(text);
+}
+function celebrate(text) {
+  sound('bigProfit', { cooldown: 0 });
+  say(text, 6, 1);
+  moodShift(0.4);
+  addGlow(1);
+  spawnConfetti(70);
+  if (pet.state !== 'grabbed' && pet.state !== 'falling') { pet.happy = 1; setState('cheer'); }
+}
+
+// ---------------------------------------------------------------- the scorecard
+let scorecardUntil = -1, scorecardTitle = 'TODAY', scorecardStats = null;
+function showScorecard(st, title = 'TODAY') {
+  scorecardStats = st || dayStats(); scorecardTitle = title; scorecardUntil = T + 30;
+  signDismissedId = null;
+  const y = who();
+  const wr = scorecardStats.trades ? Math.round(scorecardStats.wins / scorecardStats.trades * 100) : 0;
+  const sign = scorecardStats.pnl >= 0 ? '+' : '−';
+  if (!scorecardStats.trades) say(`No trades ${title === 'TODAY' ? 'yet today' : 'yesterday'}${y ? ', ' + y : ''}~`, 4);
+  else say(`${title === 'TODAY' ? 'Today' : 'Yesterday'}: ${scorecardStats.trades} trade${scorecardStats.trades === 1 ? '' : 's'}, ${sign}${fmtNum(Math.abs(scorecardStats.pnl))} SOL, ${wr}% wins${y ? '. Nice work, ' + y : ''}~`, 6, scorecardStats.pnl > 0 ? 1 : scorecardStats.pnl < 0 ? -1 : 0);
+}
+function scorecardContent() {
+  const st = scorecardStats || freshStats(dayKey());
+  const wr = st.trades ? Math.round(st.wins / st.trades * 100) : 0;
+  const foot = [st.best ? `best ${st.best.sym} +${fmtNum(st.best.pnl)}` : null, st.worst ? `worst ${st.worst.sym} −${fmtNum(Math.abs(st.worst.pnl))}` : null].filter(Boolean).join(' · ') || null;
+  return {
+    id: 'day', title: scorecardTitle,
+    amount: (st.pnl >= 0 ? '+' : '\u2212') + signMoney(st.pnl, 'SOL'),
+    sub: `${st.trades} trade${st.trades === 1 ? '' : 's'} · ${wr}% wins`,
+    foot, tone: st.pnl > 1e-9 ? 1 : st.pnl < -1e-9 ? -1 : 0,
+  };
+}
+
+// ---------------------------------------------------------------- the sell nudge
+// "You've held $X for 42 min and it's +80% — just saying." Thresholds live in the Board tab.
+function sellNudges() {
+  if (!cfg || quiet('Bubbles') || relayStatus !== 'ok') return;
+  const pctThr = Number(cfg.nudgePct) > 0 ? Number(cfg.nudgePct) : 50, minThr = Number(cfg.nudgeMin) > 0 ? Number(cfg.nudgeMin) : 30;
+  for (const p of positions.values()) {
+    if (!(p.tokens > 0) || !p.live || !(p.openedAt > 0)) continue;
+    const heldMin = (T - p.openedAt) / 60;
+    const c = buildPositionContent(p);
+    const pct = c.pct;
+    if (pct >= pctThr && heldMin >= minThr && T - (p.nudgedAt || -9999) > 1200) {
+      p.nudgedAt = T;
+      const y = who();
+      say(`You've held ${c.title} for ${Math.round(heldMin)} min and it's +${pct.toFixed(0)}%${y ? ', ' + y : ''} — just saying~`, 7, 1);
+      if (pet.state === 'idle') setState('notice');
+      return;
+    }
   }
 }
+
+// ---------------------------------------------------------------- reacting to the market
+// A coin she holds pumping or dumping gets a reaction of its own — the board swaps to it, and she
+// gasps (2×, 3×, 5×, 10×) or winces (−40 %, −70 %, or giving most of a run back).
+function marketWatch(p) {
+  if (!p.live || !(p.tokens > 0) || quiet('Reactions')) return;
+  const c = buildPositionContent(p);
+  const pct = c.pct;
+  p.peakPct = Math.max(p.peakPct || 0, pct);
+  const y = who(), sym = c.title;
+  const now = T;
+  const gaspLevel = pct >= 900 ? 4 : pct >= 400 ? 3 : pct >= 200 ? 2 : pct >= 100 ? 1 : 0;
+  const dumpLevel = pct <= -70 ? 2 : pct <= -40 ? 1 : 0;
+  const gaveBack = p.peakPct >= 80 && p.peakPct - pct >= 60 && !p.gaveBackAt;
+  const calm = pet.state === 'idle' || pet.state === 'sit' || pet.state === 'walk' || pet.state === 'notice';
+  if (gaspLevel > (p.gaspLevel || 0) && now - (p.gaspAt || -999) > 90) {
+    p.gaspLevel = gaspLevel; p.gaspAt = now; p.at = T;
+    const x = ['', '2', '3', '5', '10'][gaspLevel];
+    sound('bigProfit', { cooldown: 20, volume: 0.8 });
+    say(pick([`${sym} is ${x}×${y ? ', ' + y : ''}!!`, `Look at ${sym}! ${x}×!`, `${y ? y + '! ' : ''}${sym} just went ${x}×!`]), 6, 1);
+    moodShift(0.2);
+    if (calm) setState('gasp');
+  } else if ((dumpLevel > (p.dumpLevel || 0) || gaveBack) && now - (p.winceAt || -999) > 120) {
+    if (gaveBack) p.gaveBackAt = now; else p.dumpLevel = dumpLevel;
+    p.winceAt = now; p.at = T;
+    sound('loss', { cooldown: 20, volume: 0.7 });
+    say(gaveBack ? pick([`${sym} is giving it back${y ? ', ' + y : ''}…`, `Mm, ${sym} was +${p.peakPct.toFixed(0)}%…`])
+      : pick([`${sym} is dumping${y ? ', ' + y : ''}…`, `Ehh, ${sym}… ${pct.toFixed(0)}%.`, `${sym}… hang in there${y ? ', ' + y : ''}.`]), 6, -1);
+    moodShift(-0.15);
+    if (calm) setState('wince');
+  }
+}
+
+// ---------------------------------------------------------------- once a frame, quietly
+let companionTimer = 0, lateSaidAt = -9999;
+function companionTick(dt) {
+  if (!cfg || !model) return;
+  pet.mood *= Math.exp(-dt / 3600);           // an hour to fade
+  companionTimer += dt;
+  if (companionTimer < 5) return;
+  companionTimer = 0;
+  dayStats();                                  // rolls the day over when it changes
+  // first sight of the day
+  const today = dayKey();
+  if (settingsApplied && cfg.lastGreetDay !== today && !tourActive && T > 3) {
+    saveCfg({ lastGreetDay: today });
+    const h = new Date().getHours(), y = who();
+    const g = h < 5 ? 'Still up' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+    say(`${g}${y ? ', ' + y : ''}~ ${moodDown() ? 'Better day today, okay?' : "Let's do well today!"}`, 5);
+    if (pet.state === 'idle') setState('wave');
+  }
+  // the small hours
+  const hour = new Date().getHours();
+  if (hour >= 1 && hour < 5 && T - lateSaidAt > 1800 && !quiet('Bubbles')) {
+    lateSaidAt = T;
+    const y = who();
+    say(pick([`It's ${hour}am${y ? ', ' + y : ''}… go to sleep.`, `${y ? y + ', it' : 'It'}'s ${hour} in the morning. The chart will still be there.`]), 6);
+  }
+  sellNudges();
+  // nothing has happened for twenty minutes: she dozes off
+  if (pet.state === 'idle' && !panelOpen && !tourActive && T - pet.lastInteraction > SLEEP_AFTER && T - lastTradeAt > SLEEP_AFTER) setState('sleep');
+}
+const SLEEP_AFTER = 20 * 60;
 
 // ---------------------------------------------------------------- settings panel
 const panelEl = document.getElementById('panel');
@@ -707,6 +896,15 @@ function renderPanel() {
         <button class="ghost fix" id="btnVoiceTest">Test voice</button></div>
       <div class="sep"></div>
       <div class="f"><label><span>Your name</span><b>what she calls you</b></label><input type="text" id="fUserName" value="${esc(c.userName || '')}" placeholder="Alex" maxlength="24" spellcheck="false"></div>
+      <div class="sep"></div>
+      <div class="f"><label><span>Quiet</span><b>${dndOn() ? 'do not disturb until ' + new Date(Number(c.dndUntil)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'she reacts to everything'}</b></label>
+        <select id="fDnd"><option value="0">${dndOn() ? 'Stop do not disturb' : 'Do not disturb…'}</option><option value="30">for 30 minutes</option><option value="60">for 1 hour</option><option value="120">for 2 hours</option><option value="tomorrow">until tomorrow 08:00</option></select></div>
+      <div class="row"><label class="sw mini" style="flex:1"><input type="checkbox" id="fQuietBubbles"${c.quietBubbles ? ' checked' : ''}>No speech</label>
+        <label class="sw mini" style="flex:1"><input type="checkbox" id="fQuietReactions"${c.quietReactions ? ' checked' : ''}>No reactions</label></div>
+      <div class="row"><label class="sw mini" style="flex:1"><input type="checkbox" id="fQuietBoard"${c.quietBoard ? ' checked' : ''}>No board</label>
+        <label class="sw mini" style="flex:1"><input type="checkbox" id="fQuietSounds"${c.quietSounds ? ' checked' : ''}>No sounds</label></div>
+      ${Array.isArray(c.displays) && c.displays.length > 1 ? `<div class="sep"></div><div class="f"><label>Screen</label><select id="fDisplay">${c.displays.map((d) => `<option value="${d.id}"${(c.display == null ? d.primary : String(c.display) === String(d.id)) ? ' selected' : ''}>${esc(d.label)}</option>`).join('')}</select></div>` : ''}
+      <div class="sep"></div>
       <div class="row"><button class="ghost" id="btnTour">Replay tutorial</button><button class="ghost danger" id="btnReset">Reset everything</button></div>
     </div>
 
@@ -743,8 +941,15 @@ function renderPanel() {
       <div class="row"><div class="f half">${lab('SOL price $', liveSolUsd > 0 ? 'live ' + liveSolUsd.toFixed(2) : 'fallback')}<input type="text" id="fSolPrice" value="${esc(String(c.solPrice ?? 101.95))}" spellcheck="false"></div><div class="f"></div></div>
       <div class="hint">The relay sends the live SOL price; this is only used until it has.</div>
       <div class="sep"></div>
+      <div class="row"><div class="f"><label>Open coins in</label><select id="fOpenWith">${[['axiom', 'Axiom'], ['pump', 'pump.fun'], ['dexscreener', 'DexScreener']].map(([v, l]) => `<option value="${v}"${v === (c.openWith || 'axiom') ? ' selected' : ''}>${l}</option>`).join('')}</select></div>
+        <div class="f"><label>&nbsp;</label><label class="sw mini"><input type="checkbox" id="fGuard"${c.guard !== false ? ' checked' : ''}>"Are you sure?" look</label></div></div>
+      <div class="hint">Hover the board for its badges: close, open the coin, copy the address, flip to every open bag. The look is for buying back a coin you just sold at a loss.</div>
+      <div class="row"><div class="f">${lab('Nudge when up', (Number(c.nudgePct) > 0 ? Number(c.nudgePct) : 50) + '%')}<input type="range" id="fNudgePct" min="10" max="300" step="10" value="${Number(c.nudgePct) > 0 ? Number(c.nudgePct) : 50}"></div>
+        <div class="f">${lab('and held for', (Number(c.nudgeMin) > 0 ? Number(c.nudgeMin) : 30) + ' min')}<input type="range" id="fNudgeMin" min="5" max="240" step="5" value="${Number(c.nudgeMin) > 0 ? Number(c.nudgeMin) : 30}"></div></div>
+      <div class="hint">"You've held $X for 42 min and it's +80% — just saying~"</div>
+      <div class="sep"></div>
       <div class="f"><label>Try it out</label>
-        <div class="btnrow"><button class="ghost" id="btnTestSign">${demoPos ? 'Stop test' : 'Test position'}</button></div></div>
+        <div class="btnrow"><button class="ghost" id="btnTestSign">${demoPos ? 'Stop test' : 'Test position'}</button><button class="ghost" id="btnScorecard">Today's card</button></div></div>
       <div class="f"><label>Try a reaction</label>
         <div class="btnrow"><button class="ghost" id="tProfit">Profit</button><button class="ghost" id="tLoss">Loss</button><button class="ghost" id="tBuy">Buy</button></div></div>
     </div>
@@ -820,6 +1025,17 @@ function renderPanel() {
   $('fPitch').onchange = () => playAssigned(cfg.sounds.click || 'hai');
   $('fMute').onchange = (e) => saveCfg({ muted: e.target.checked });
   $('fUserName').onchange = (e) => saveCfg({ userName: e.target.value.trim().slice(0, 24) });
+  $('fDnd').onchange = (e) => {
+    const v = e.target.value; let until = 0;
+    if (v === 'tomorrow') { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(8, 0, 0, 0); until = d.getTime(); }
+    else if (Number(v) > 0) until = Date.now() + Number(v) * 60000;
+    saveCfg({ dndUntil: until }); renderPanel(); positionPanel();
+    if (until) say('Okay, I\'ll be quiet~', 2.5);
+  };
+  for (const [id, key] of [['fQuietBubbles', 'quietBubbles'], ['fQuietReactions', 'quietReactions'], ['fQuietBoard', 'quietBoard'], ['fQuietSounds', 'quietSounds']]) {
+    const el = $(id); if (el) el.onchange = (e) => { saveCfg({ [key]: e.target.checked }); if (key === 'quietBoard' && sign) sign.text = ''; };
+  }
+  const disp = $('fDisplay'); if (disp) disp.onchange = (e) => bridge.setDisplay(Number(e.target.value));
   $('btnTour').onclick = () => { closePanel(); startTour(); };
   $('btnReset').onclick = () => {
     if (!confirm('Reset everything? Her look, your name, the wallet and every other setting go back to how she came. The tutorial runs again.')) return;
@@ -837,6 +1053,11 @@ function renderPanel() {
   $('fSignStyle').onchange = (e) => { saveCfg({ signStyle: Number(e.target.value) }); if (sign) sign.text = ''; };
   $('fSolPrice').onchange = (e) => { const v = Number(e.target.value); if (v > 0) saveCfg({ solPrice: v }); if (sign) sign.text = ''; };
   $('btnTestSign').onclick = () => { if (cfg.sign === false) saveCfg({ sign: true }); toggleDemoSign(); renderPanel(); positionPanel(); };
+  $('btnScorecard').onclick = () => { demoPos = null; showScorecard(dayStats(), 'TODAY'); };
+  $('fOpenWith').onchange = (e) => saveCfg({ openWith: e.target.value });
+  $('fGuard').onchange = (e) => saveCfg({ guard: e.target.checked });
+  $('fNudgePct').oninput = (e) => { saveCfg({ nudgePct: Number(e.target.value) }); readout(e.target, e.target.value + '%'); };
+  $('fNudgeMin').oninput = (e) => { saveCfg({ nudgeMin: Number(e.target.value) }); readout(e.target, e.target.value + ' min'); };
   $('fSignSize').oninput = (e) => { saveCfg({ signSize: Number(e.target.value) }); readout(e.target, pct(cfg.signSize)); };
   $('tProfit').onclick = () => reactToTrade({ side: 'sell', symbol: 'PEPE', quote: 'SOL', amount: 1.42, pnl: 0.61, pnlPct: 75 });
   $('tLoss').onclick = () => reactToTrade({ side: 'sell', symbol: 'WOJAK', quote: 'SOL', amount: 0.31, pnl: -0.24, pnlPct: -44 });
@@ -1021,6 +1242,8 @@ const pet = {
   dizzy: 0,
   happy: 0,
   glow: 0, hurt: 0, wounds: [],     // trade after-effects: golden glow / bruises (see updateFx)
+  mood: 0,                         // -1 worried .. +1 bouncy; fades over an hour
+  pokeAt: -99, flinchAt: -99, sleepSaidAt: 0,
   jumpFlag: false,
   sitUntil: 0,
 };
@@ -1044,7 +1267,10 @@ function setState(s) {
     pet.walkTarget = clamp(tx, minX, maxX);
     pet.facing = Math.sign(pet.walkTarget - pet.x) || 1;
   }
-  if (s === 'idle') { pet.micro = null; pet.nextActionAt = T + rand(4, 10); }
+  if (s === 'idle') { pet.micro = null; pet.nextActionAt = T + rand(4, 10) * (moodUp() ? 0.6 : moodDown() ? 1.8 : 1); }
+  if (s === 'sleep') { pet.micro = null; pet.sleepSaidAt = T; say('…zzz', 3); }
+  if (s === 'wake') { sound('grab', { cooldown: 2, volume: 0.6 }); }
+  if (s === 'gasp' || s === 'wince' || s === 'guard') pet.micro = null;
   if (s === 'comfort') { pet.comfortSide = Math.random() < 0.5 ? -1 : 1; pet.cheeredUp = false; }
   if (s === 'sit') { pet.sitUntil = T + rand(30, 90); }
   if (s === 'dizzy') sound('dizzy');
@@ -1076,7 +1302,8 @@ window.addEventListener('mousedown', (e) => {
   if (tourActive && e.target instanceof Node && tourEl.contains(e.target)) return;
   updateCursor(e.clientX, e.clientY);
   if (!model) return;
-  if (e.button === 0 && signHitTest().close) { e.preventDefault(); dismissSign(); return; } // the X on her sign
+  const sb = signHitTest().badge;
+  if (e.button === 0 && sb) { e.preventDefault(); signBadgeAction(sb); return; }   // a badge on her board
   cursor.hit = hitTest();
   if (!cursor.hit) { closeHer(); return; }
   e.preventDefault();
@@ -1105,7 +1332,12 @@ window.addEventListener('mouseup', (e) => {
       setState(pet.onGround ? 'wave' : 'falling');
       // The press already put her settings away, so a click with them open is "close" and must
       // not toggle them straight back; one with them closed opens them.
-      if (!downPanelOpen && pet.onGround) { openPanel(); sound('click'); say(line(LINES.greet, herName())); }
+      if (!downPanelOpen && pet.onGround) {
+        openPanel(); sound('click');
+        const y = who();
+        if (cursor.hit === 'head') pet.pokeAt = T;   // a tap on the head is a poke, whatever else it does
+        say(moodUp() ? pick([`We're on a roll${y ? ', ' + y : ''}~`, `Ehehe, today is going well${y ? ', ' + y : ''}!`]) : moodDown() ? pick([`…hey${y ? ' ' + y : ''}. Rough one, huh?`, `I'm still here${y ? ', ' + y : ''}.`]) : line(LINES.greet, herName()));
+      }
     }
     return;
   }
@@ -1401,6 +1633,18 @@ function idleMicro(dt) {
     addPose('head', 0.16 * n, 0, 0);
     addPose('chest', 0.03 * n, 0, 0);
     expr('happy', 0.3 * w);
+  } else if (m.name === 'phone') {
+    // pulls out a phone: both hands up in front, head down, thumb scrolling now and then
+    const q = Math.sin(Math.PI * clamp(m.t / m.dur, 0, 1));
+    const k = smoothstep(Math.min(m.t, m.dur - m.t) / 0.7);   // hands come up, stay, go down
+    mixPose('leftUpperArm', -0.55, 0.05, -0.55, k);  mixPose('rightUpperArm', -0.55, -0.05, 0.55, k);
+    mixPose('leftLowerArm', 0, -1.95, -0.35, k);     mixPose('rightLowerArm', 0, 1.95, 0.35, k);
+    mixPose('leftHand', 0.3, 0.2, 0, k);             mixPose('rightHand', 0.3 + 0.18 * Math.max(0, Math.sin(m.t * 5.5)) * (Math.sin(m.t * 0.9) > 0.3 ? 1 : 0), -0.2, 0, k);
+    addPose('head', 0.4 * k, 0, 0.04 * Math.sin(m.t * 0.7) * k);
+    addPose('spine', 0.06 * k, 0, 0);
+    expr('relaxed', 0.4 * k);
+    if (Math.sin(m.t * 1.3 + 2) > 0.8) expr('happy', 0.5 * k);   // something funny on the timeline
+    eyesClosed = Math.max(eyesClosed, 0.12 * k);
   } else if (m.name === 'shuffle') {
     // Shifts her weight and takes half a step to one side, the way anyone standing a while does.
     // Her left is the viewer's right, so a move to screen-right leads with her left foot.
@@ -1437,11 +1681,40 @@ function idleMicro(dt) {
   if (m.t >= m.dur) { pet.micro = null; pet.nextActionAt = T + rand(3, 9); }
 }
 
+const lateHour = () => { const h = new Date().getHours(); return h >= 0 && h < 5; };
+// Reflexes sit on top of whatever she is doing: a poke on the nose, a flinch from a hand that
+// swings past too fast.
+const FLINCH_SPEED = 2600;   // px/s of cursor motion near her that makes her flinch
+function reflexes() {
+  const st = pet.state;
+  if (st === 'grabbed' || st === 'falling') return;
+  // a fast hand near her
+  if (cursor.seen && !cursor.down && T - pet.flinchAt > 3 && Math.hypot(cursor.vx, cursor.vy) > FLINCH_SPEED && cursorNear()) {
+    pet.flinchAt = T; pet.lastInteraction = T;
+    if (Math.random() < 0.5) sound('grab', { cooldown: 4, volume: 0.5 });
+    if (st === 'sleep') setState('wake');
+  }
+  const f = T - pet.flinchAt;
+  if (f < 0.6) {
+    const w = envelope(f, 0.6, 0.12);
+    mixPose('leftUpperArm', -0.9, 0.2, -0.6, w);   mixPose('rightUpperArm', -0.9, -0.2, 0.6, w);
+    mixPose('leftLowerArm', 0, -1.5, -0.4, w);      mixPose('rightLowerArm', 0, 1.5, 0.4, w);
+    addPose('head', -0.2 * w, 0, 0.1 * w); addPose('spine', 0.08 * w, 0, 0);
+    eyesClosed = Math.max(eyesClosed, w); expr('surprised', 0.6 * w);
+  }
+  // a poke on the nose: a scrunch and a small jerk back
+  const p = T - pet.pokeAt;
+  if (p < 0.55) {
+    const w = envelope(p, 0.55, 0.1);
+    addPose('head', -0.16 * w, 0, 0.06 * w); addPose('neck', -0.06 * w, 0, 0);
+    expr('ou', 0.7 * w); eyesClosed = Math.max(eyesClosed, 0.6 * w);
+  }
+}
 function chooseIdleAction() {
   const idleFor = T - pet.lastInteraction;
   if (idleFor > 100 && Math.random() < 0.5 && pet.onGround) { setState('sit'); return; }
   const r = Math.random();
-  if (r < 0.34 && !panelOpen) { setState('walk'); return; } // not while her settings are open
+  if (r < (moodDown() ? 0.12 : 0.34) && !panelOpen) { setState('walk'); return; } // not while her settings are open
   // Anything that moves her arms is pointless while she is holding the board or hugging her
   // signPose runs after this and wins. Pick from what will actually be visible.
   const handsFree = !(sign && sign.phase !== 'hidden');
@@ -1451,13 +1724,16 @@ function chooseIdleAction() {
   // never changes its footing reads as a statue. The hop needs her hands, or she would jump with the board.
   // Like the walk, the shuffle is off while her settings are open: the panel follows her, and a
   // slider that slides out from under the cursor mid-drag is maddening.
-  const pool = (handsFree
-    ? ['stretch', 'lookaround', 'headtilt', 'sway', 'hum', 'lookaround', 'peek', 'peek', 'fixhair', 'think', 'nod', 'shuffle', 'shuffle', 'hop']
+  let pool = (handsFree
+    ? ['stretch', 'lookaround', 'headtilt', 'sway', 'hum', 'lookaround', 'peek', 'peek', 'fixhair', 'think', 'nod', 'shuffle', 'shuffle', 'hop', 'phone']
     : ['lookaround', 'headtilt', 'sway', 'hum', 'peek', 'peek', 'nod', 'lookaround', 'shuffle', 'shuffle']
   ).filter((n) => !(panelOpen && n === 'shuffle'));
+  // mood: bouncy means more hops and humming; worried means the quiet ones only
+  if (moodUp()) pool = pool.concat(handsFree ? ['hop', 'hop', 'hum'] : ['hum', 'sway']);
+  if (moodDown()) pool = pool.filter((n) => !['hop', 'hum', 'stretch', 'fixhair', 'phone'].includes(n)).concat(['peek', 'headtilt']);
   const name = pick(pool);
   const dur = { stretch: 3.2, lookaround: 3.5, headtilt: 2.2, sway: 4, hum: 4,
-    peek: 2.8, fixhair: 2.6, think: 3.8, nod: 2.0, shuffle: 2.4, hop: 1.15 }[name];
+    peek: 2.8, fixhair: 2.6, think: 3.8, nod: 2.0, shuffle: 2.4, hop: 1.15, phone: rand(7, 10) }[name];
   if (name === 'stretch' || name === 'hum') sound('stretch', { cooldown: 25, volume: 0.6 });
   if (name === 'hop') sound('jump', { cooldown: 30, volume: 0.45 });
   pet.micro = { name, t: 0, dur, side: Math.random() < 0.5 ? -1 : 1 };
@@ -1747,6 +2023,95 @@ function updateState(dt) {
     if (T > pet.sitUntil) setState('idle');
   }
 
+  else if (st === 'sleep') {
+    // dozed off kneeling: head drooping, eyes shut, slow breath, the odd "zzz"; a trade or a
+    // touch wakes her with a jolt
+    defaultRate = 3;
+    groundStep(dt);
+    const w = smoothstep(pet.t / 2.5);
+    crouchTarget = -model.hipH * 0.52 * w;
+    mixPose('leftUpperLeg', -0.32, 0.1, 0.06, w);   mixPose('rightUpperLeg', -0.32, -0.1, -0.06, w);
+    mixPose('leftLowerLeg', 2.35, 0, 0, w);         mixPose('rightLowerLeg', 2.35, 0, 0, w);
+    mixPose('leftFoot', 0.75, 0, 0, w);             mixPose('rightFoot', 0.75, 0, 0, w);
+    mixPose('leftUpperArm', 0.5, 0.1, -1.1, w);     mixPose('rightUpperArm', 0.5, -0.1, 1.1, w);
+    mixPose('leftLowerArm', 0, -0.6, -0.15, w);     mixPose('rightLowerArm', 0, 0.6, 0.15, w);
+    const nod = 0.06 * Math.sin(T * 0.9);
+    addPose('spine', 0.22 * w, 0, 0);
+    addPose('head', (0.55 + nod) * w, 0, 0.12 * w);
+    breathing(0.6);
+    eyesClosed = Math.max(eyesClosed, w);
+    expr('relaxed', 0.6 * w);
+    if (T - pet.sleepSaidAt > 25) { pet.sleepSaidAt = T; say(pick(['…zzz', 'zzz…', '…mm… zzz']), 4); sound('stretch', { cooldown: 60, volume: 0.35 }); }
+    if (cursorNear() && cursor.seen && T - cursor.lastT < 0.5) pet.wakeNear = (pet.wakeNear || 0) + dt; else pet.wakeNear = 0;
+    if (pet.wakeNear > 0.6 || T - pet.lastInteraction < 1) setState('wake');
+  }
+
+  else if (st === 'wake') {
+    // the jolt: eyes wide, head up, hands up, then she gathers herself
+    defaultRate = 18;
+    groundStep(dt);
+    const w = envelope(pet.t, 0.9, 0.12);
+    mixPose('leftUpperArm', -0.6, 0, -0.5, w);   mixPose('rightUpperArm', -0.6, 0, 0.5, w);
+    mixPose('leftLowerArm', 0, -1.4, -0.2, w);    mixPose('rightLowerArm', 0, 1.4, 0.2, w);
+    addPose('head', -0.25 * w, 0, 0.1 * w);
+    addPose('spine', -0.08 * w, 0, 0);
+    expr('surprised', w); expr('oh', 0.5 * w);
+    if (pet.t > 0.9) { setState('idle'); say(pick(['…I was awake!', 'Mm? I am here!', 'Un!']), 3); }
+  }
+
+  else if (st === 'gasp') {
+    // a coin she holds just ran: hands fly to her cheeks, then she points at the board
+    groundStep(dt);
+    defaultRate = 16;
+    const w = envelope(pet.t, 2.4, 0.2);
+    const point = smoothstep((pet.t - 0.8) / 0.4);                  // hands to cheeks first, then the point
+    const side = sign && sign.mesh.visible ? sign.side : -1;         // which hand the board is on
+    const pa = side < 0 ? 'right' : 'left', k = side < 0 ? 1 : -1, oa = side < 0 ? 'left' : 'right';
+    mixPose(oa + 'UpperArm', -0.3, 0, -0.95 * k, w);  mixPose(oa + 'LowerArm', 0, 1.7 * -k, 0.5 * -k, w); mixPose(oa + 'Hand', 0.2, 0, 0, w);   // cheek
+    mixPose(pa + 'UpperArm', lerp(-0.3, -1.2, point), 0, lerp(0.95 * k, 0.35 * k, point), w);
+    mixPose(pa + 'LowerArm', 0, lerp(1.7 * k, 0.15 * k, point), lerp(0.5 * k, 0, point), w);   // cheek, then straight out at the board
+    mixPose(pa + 'Hand', 0, 0, 0, w);
+    addPose('head', -0.14 * w, 0.18 * k * point * w, 0.08 * w);
+    addPose('spine', -0.06 * w, 0.1 * k * point * w, 0);
+    bobTarget = 0.03 * model.height * Math.max(0, Math.sin(pet.t * 9)) * (pet.t < 0.7 ? w : 0);   // a little bounce on the gasp
+    expr('surprised', w); expr('aa', 0.6 * w); expr('happy', 0.4 * point * w);
+    headLook(0.2);
+    if (pet.t > 2.4) setState('idle');
+  }
+
+  else if (st === 'wince') {
+    // a coin she holds is dumping: eyes screwed shut, shoulders up, board pulled in close
+    groundStep(dt);
+    defaultRate = 12;
+    const w = envelope(pet.t, 2.6, 0.3);
+    mixPose('leftShoulder', -0.1, 0, 0.25, w); mixPose('rightShoulder', -0.1, 0, -0.25, w);
+    mixPose('leftUpperArm', -0.2, 0.3, -0.55, w);   mixPose('rightUpperArm', -0.2, -0.3, 0.55, w);
+    mixPose('leftLowerArm', 0.1, -1.6, -0.3, w);     mixPose('rightLowerArm', 0.1, 1.6, 0.3, w);
+    crouchTarget = -0.02 * model.height * w;
+    addPose('spine', 0.14 * w, 0, 0.05 * w);
+    addPose('head', 0.2 * w, 0.2 * w, -0.14 * w);
+    eyesClosed = Math.max(eyesClosed, 0.85 * w);
+    expr('ih', 0.6 * w); expr('sad', 0.5 * w);
+    if (pet.t > 2.6) setState('idle');
+  }
+
+  else if (st === 'guard') {
+    // hands on hips, head tilted, one eyebrow up. It is a look, not a lecture.
+    groundStep(dt);
+    defaultRate = 9;
+    const w = envelope(pet.t, 3.0, 0.4);
+    mixPose('leftUpperArm', 0.1, 0.55, -0.95, w);   mixPose('rightUpperArm', 0.1, -0.55, 0.95, w);
+    mixPose('leftLowerArm', 0, -1.35, -0.9, w);     mixPose('rightLowerArm', 0, 1.35, 0.9, w);
+    mixPose('leftHand', -0.3, 0, 0.2, w);           mixPose('rightHand', -0.3, 0, -0.2, w);
+    addPose('hips', 0, 0, 0.07 * w);
+    addPose('spine', -0.04 * w, 0, -0.05 * w);
+    addPose('head', -0.05 * w, 0.12 * w, 0.22 * w);
+    expr('angry', 0.28 * w); expr('relaxed', 0.3 * w);
+    eyesClosed = Math.max(eyesClosed, 0.28 * w);
+    headLook(1);
+    if (pet.t > 3.0) setState('idle');
+  }
+
   else if (st === 'cheer') {
     // profit: two big excited jumps, knees tucked in the air, arms thrown up, mouth open
     groundStep(dt);
@@ -1834,7 +2199,18 @@ function updateState(dt) {
       const w = clamp((pet.hoverTime - 0.35) / 0.6, 0, 1);
       expr('happy', 0.65 * w);
       addPose('head', 0, 0, 0.12 * w * (cursor.wx > pet.x ? -1 : 1));
+      // a hand resting on her head: she leans into it
+      if (cursor.hit === 'head' && pet.hoverTime > 1.2) {
+        const l = clamp((pet.hoverTime - 1.2) / 0.8, 0, 1) * (cursor.wx > pet.x ? -1 : 1);
+        addPose('head', 0.12 * Math.abs(l), 0, 0.22 * l); addPose('neck', 0.05 * Math.abs(l), 0, 0.08 * l);
+        expr('relaxed', 0.6 * Math.abs(l)); eyesClosed = Math.max(eyesClosed, 0.5 * Math.abs(l));
+      }
     }
+    // mood on her face while nothing else is going on
+    if (moodUp()) expr('happy', 0.3 * pet.mood);
+    if (moodDown()) { expr('sad', 0.35 * -pet.mood); addPose('head', 0.08 * -pet.mood, 0, 0); }
+    // the small hours: heavy eyes
+    if (lateHour()) eyesClosed = Math.max(eyesClosed, 0.3);
     // turn slightly toward a nearby cursor
     if (cursor.seen) {
       const d = (cursor.wx - pet.x) * ppu;
@@ -1844,6 +2220,7 @@ function updateState(dt) {
     if (!pet.micro && T > pet.nextActionAt) chooseIdleAction();
   }
 
+  reflexes();
   if (pet.happy > 0) { expr('happy', pet.happy); pet.happy = Math.max(0, pet.happy - dt * 0.7); }
   signPose();
   if (pet.glow > 0) expr('happy', 0.35 * pet.glow);
@@ -1945,7 +2322,7 @@ function resetTradingState() {
 
 function applyPosition(mint, o) {
   if (!(o.tokens > 0)) { positions.delete(mint); return; }
-  const p = positions.get(mint) || { mint, price: 0, at: 0, invSum: 0, mc: 0 };
+  const p = positions.get(mint) || { mint, price: 0, at: 0, invSum: 0, mc: 0, openedAt: T };
   Object.assign(p, o);
   if (!(p.price > 0) && p.cost > 0) p.price = p.cost / p.tokens; // no tick yet: start flat
   positions.set(mint, p);
@@ -1991,7 +2368,7 @@ function buildPositionContent(p) {
   // where she bought it, the dollar cap, how many bags are open — whatever of those is known
   const foot = [VENUES[p.venue] || null, cap, open > 1 ? open + ' open' : null].filter(Boolean).join(' \u00b7 ') || null;
   return {
-    id: 'pos:' + p.mint,
+    id: 'pos:' + p.mint, pct,
     title: p.symbol ? '$' + p.symbol : p.mint.slice(0, 4) + '\u2026',
     amount: (pnl >= 0 ? '+' : '\u2212') + signMoney(pnl, p.quote, p.quoteKind),
     sub: `${pct >= 0 ? '+' : '\u2212'}${Math.abs(pct).toFixed(Math.abs(pct) >= 100 ? 0 : 1)}%`,
@@ -2009,7 +2386,10 @@ function signContent() {
   const hide = (c) => (c && c.id === signDismissedId ? null : c);
   const demo = demoContent();
   if (demo) return hide(demo);
+  if (quiet('Board')) return null;
+  if (scorecardUntil > T) return hide(scorecardContent());
   if (relayStatus !== 'ok') return null;
+  if (signListMode) { const l = listContent(); if (l) return hide(l); signListMode = false; }
   const p = livePosition();
   if (p) return hide(buildPositionContent(p));
   if (sessionTrades > 0 && T - lastTradeAt < SESSION_SHOW) {
@@ -2025,6 +2405,40 @@ function signContent() {
   return null;
 }
 
+// the board flipped over: every open bag, best to worst
+let signListMode = false;
+function listContent() {
+  const rows = [];
+  for (const p of positions.values()) if (p.tokens > 0 && p.live) { const c = buildPositionContent(p); rows.push({ sym: c.title, pnl: c.amount, pct: c.sub, tone: c.tone, mint: p.mint, n: c.pct }); }
+  if (!rows.length) return null;
+  rows.sort((a, b) => b.n - a.n);
+  const lines = rows.slice(0, 6);
+  const total = rows.reduce((s, r) => s + (r.tone === 0 ? 0 : 0), 0);
+  return { id: 'list', title: 'OPEN BAGS', lines, amount: '', sub: rows.length > 6 ? `+${rows.length - 6} more` : '', foot: null, tone: lines[0].tone, text: lines.map((l) => l.sym + l.pnl + l.pct).join('|') };
+}
+// the flipped board, in the Aurora look whatever style the single board uses
+function drawListBoard(g, c) {
+  const x = 26, y = 16, w = SW - 52, h = BOARD_H - 32, r = 60;
+  g.save(); g.shadowColor = 'rgba(0,0,0,0.5)'; g.shadowBlur = 40; g.shadowOffsetY = 14;
+  g.fillStyle = 'rgba(13,11,18,0.97)'; roundRect(g, x, y, w, h, r); g.fill(); g.restore();
+  g.save(); roundRect(g, x, y, w, h, r); g.clip(); g.filter = 'blur(45px)';
+  const bloom = (cx, cy, rad, col) => { const gr = g.createRadialGradient(cx, cy, 0, cx, cy, rad); gr.addColorStop(0, col); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(cx - rad, cy - rad, rad * 2, rad * 2); };
+  bloom(SW - 200, 30, 300, 'rgba(255,111,174,1)'); bloom(SW - 40, 130, 280, 'rgba(124,92,255,1)'); bloom(SW - 340, 150, 230, 'rgba(52,213,201,0.85)');
+  g.filter = 'none'; g.restore();
+  g.strokeStyle = 'rgba(255,255,255,0.14)'; g.lineWidth = 3; roundRect(g, x, y, w, h, r); g.stroke();
+  sTxt(g, c.title, SW / 2, 88, '600 44px Rubik, "Segoe UI", system-ui, sans-serif', '#a79fbb', SW - 260, '8px');
+  const n = c.lines.length, top = 150, rowH = Math.min(82, (BOARD_H - 190) / n);
+  for (let i = 0; i < n; i++) {
+    const l = c.lines[i], yy = top + rowH * i + rowH / 2;
+    const acc = l.tone > 0 ? '#3fe0a5' : l.tone < 0 ? '#ff5c8a' : '#d9d3e8';
+    if (i) { g.strokeStyle = 'rgba(255,255,255,0.07)'; g.lineWidth = 2; g.beginPath(); g.moveTo(90, yy - rowH / 2); g.lineTo(SW - 90, yy - rowH / 2); g.stroke(); }
+    g.textAlign = 'left';  sTxt(g, l.sym, 96, yy, '600 52px Rubik, "Segoe UI", system-ui, sans-serif', '#f1eef8', 330);
+    g.textAlign = 'right'; sTxt(g, l.pnl, SW - 250, yy, '700 52px Outfit, "Segoe UI", system-ui, sans-serif', acc, 300);
+    sTxt(g, l.pct, SW - 96, yy, '500 40px Rubik, "Segoe UI", system-ui, sans-serif', acc, 150);
+  }
+  g.textAlign = 'center';
+  if (c.sub) sTxt(g, c.sub, SW / 2, BOARD_H - 46, '500 34px Rubik, "Segoe UI", system-ui, sans-serif', '#6f6785', SW - 130);
+}
 function ensureSign() {
   if (sign || !model) return sign;
   const canvas = document.createElement('canvas');
@@ -2330,27 +2744,55 @@ function drawSign(c) {
   POSTX = SW * (0.5 - sign.side * SIGN_LATERAL);
   g.clearRect(0, 0, SW, SH);
   g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round'; g.lineCap = 'round';
-  signStyle().draw(g, c, SIGN_TONE[String(c.tone)] || SIGN_TONE[0]);
+  if (c.lines) drawListBoard(g, c); else signStyle().draw(g, c, SIGN_TONE[String(c.tone)] || SIGN_TONE[0]);
   if (sign.hover) {
-    g.save();
-    g.shadowColor = 'rgba(0,0,0,0.5)'; g.shadowBlur = 12;
-    g.fillStyle = 'rgba(12,14,20,0.86)';
-    g.beginPath(); g.arc(SIGN_X.cx, SIGN_X.cy, SIGN_X.r, 0, Math.PI * 2); g.fill();
-    g.restore();
-    g.strokeStyle = 'rgba(255,255,255,0.28)'; g.lineWidth = 3;
-    g.beginPath(); g.arc(SIGN_X.cx, SIGN_X.cy, SIGN_X.r, 0, Math.PI * 2); g.stroke();
-    g.strokeStyle = '#ffffff'; g.lineWidth = 8;
-    const d = SIGN_X.r * 0.40;
-    g.beginPath();
-    g.moveTo(SIGN_X.cx - d, SIGN_X.cy - d); g.lineTo(SIGN_X.cx + d, SIGN_X.cy + d);
-    g.moveTo(SIGN_X.cx + d, SIGN_X.cy - d); g.lineTo(SIGN_X.cx - d, SIGN_X.cy + d);
-    g.stroke();
+    // the badges along the top edge: close, and — when it makes sense — flip, copy, open
+    for (const b of signBadges(c)) {
+      g.save();
+      g.shadowColor = 'rgba(0,0,0,0.5)'; g.shadowBlur = 12;
+      g.fillStyle = 'rgba(12,14,20,0.86)';
+      g.beginPath(); g.arc(b.cx, b.cy, b.r, 0, Math.PI * 2); g.fill();
+      g.restore();
+      g.strokeStyle = 'rgba(255,255,255,0.28)'; g.lineWidth = 3;
+      g.beginPath(); g.arc(b.cx, b.cy, b.r, 0, Math.PI * 2); g.stroke();
+      g.strokeStyle = '#ffffff'; g.lineWidth = 7; g.lineCap = 'round'; g.lineJoin = 'round'; g.fillStyle = '#ffffff';
+      const d = b.r * 0.40, cx = b.cx, cy = b.cy;
+      g.beginPath();
+      if (b.key === 'close') { g.moveTo(cx - d, cy - d); g.lineTo(cx + d, cy + d); g.moveTo(cx + d, cy - d); g.lineTo(cx - d, cy + d); g.stroke(); }
+      else if (b.key === 'list') { for (const k of [-1, 0, 1]) { g.moveTo(cx - d, cy + k * d * 0.85); g.lineTo(cx + d, cy + k * d * 0.85); } g.stroke(); }
+      else if (b.key === 'copy') { g.lineWidth = 6; roundRect(g, cx - d, cy - d * 0.55, d * 1.4, d * 1.4, 6); g.stroke(); g.beginPath(); roundRect(g, cx - d * 0.4, cy - d * 1.1, d * 1.4, d * 1.4, 6); g.stroke(); }
+      else if (b.key === 'open') { g.moveTo(cx - d, cy + d); g.lineTo(cx + d, cy - d); g.moveTo(cx - d * 0.1, cy - d); g.lineTo(cx + d, cy - d); g.lineTo(cx + d, cy + d * 0.1); g.stroke(); }
+    }
   }
   sign.tex.needsUpdate = true;
 }
+// which badges the board offers for what it is showing, in texture px
+function signBadges(c) {
+  const out = [{ key: 'close', cx: SIGN_X.cx, cy: SIGN_X.cy, r: SIGN_X.r }];
+  const hasMint = c && c.id && c.id.startsWith('pos:');
+  const step = 128;
+  let i = 1;
+  if (hasMint) { out.push({ key: 'open', cx: SIGN_X.cx - step * i++, cy: SIGN_X.cy, r: SIGN_X.r }); out.push({ key: 'copy', cx: SIGN_X.cx - step * i++, cy: SIGN_X.cy, r: SIGN_X.r }); }
+  if (c && (hasMint || c.id === 'list')) out.push({ key: 'list', cx: SIGN_X.cx - step * i++, cy: SIGN_X.cy, r: SIGN_X.r });
+  return out;
+}
+function signBadgeAction(key) {
+  const c = signContent();
+  if (key === 'close') return dismissSign();
+  if (key === 'list') { signListMode = !signListMode; if (sign) sign.text = ''; return true; }
+  const mint = c && c.id && c.id.startsWith('pos:') ? c.id.slice(4) : null;
+  if (!mint) return false;
+  if (key === 'copy') { navigator.clipboard.writeText(mint).then(() => say('Copied~', 2)).catch(() => say("Couldn't copy…", 2)); return true; }
+  if (key === 'open') {
+    const w = cfg?.openWith || 'axiom';
+    const url = w === 'pump' ? `https://pump.fun/coin/${mint}` : w === 'dexscreener' ? `https://dexscreener.com/solana/${mint}` : `https://axiom.trade/t/${mint}`;
+    bridge.openExternal(url); say('Opening~', 2); return true;
+  }
+  return false;
+}
 
 // the sign is only held while she is upright and calm; otherwise she stashes it
-const SIGN_STATES = new Set(['idle', 'walk', 'sit', 'wave', 'notice', 'cheer', 'comfort']);
+const SIGN_STATES = new Set(['idle', 'walk', 'sit', 'wave', 'notice', 'cheer', 'comfort', 'gasp', 'wince', 'guard']);
 const SIGN_REACH = 0.42; // how far the board sticks out from her centre, in body heights
 function signTwoHanded(want) {
   const m = cfg?.signHold;
@@ -2393,7 +2835,7 @@ function updateSign(dt) {
       }
     }
     else {
-      const text = want.id + want.amount + want.sub + (want.foot || '') + (s.hover ? '#x' : '');
+      const text = want.id + want.amount + want.sub + (want.foot || '') + (want.text || '') + (s.hover ? '#x' : '');
       if (text !== s.text && T - s.drawnAt > 0.08) { drawSign(want); s.text = text; s.drawnAt = T; }
     }
   } else if (s.phase === 'stashing') {
@@ -2463,20 +2905,31 @@ function signScreenBox() {
 }
 // screen rect of the close badge, or null when it is not showing
 function signCloseAt() {
+  const b = signBadgeAt('close');
+  return b;
+}
+// screen circle of one badge, or null when the board is not up
+function signBadgeAt(key) {
   if (!sign || !sign.mesh.visible || sign.phase !== 'held') return null;
   const box = signScreenBox();
   if (!box) return null;
+  const c = signContent();
+  const b = signBadges(c).find((x) => x.key === key);
+  if (!b) return null;
   const w = box.r - box.l, h = box.b - box.t;
-  return { x: box.l + (SIGN_X.cx / SIGN_W) * w, y: box.t + (SIGN_X.cy / SIGN_H) * h, r: Math.max(15, (SIGN_X.r / SIGN_W) * w) };
+  return { x: box.l + (b.cx / SIGN_W) * w, y: box.t + (b.cy / SIGN_H) * h, r: Math.max(15, (b.r / SIGN_W) * w), key };
 }
 function signHitTest() {
-  if (!cursor.seen) return { over: false, close: false };
+  if (!cursor.seen) return { over: false, close: false, badge: null };
   const box = signScreenBox();
-  if (!box || sign.phase !== 'held') return { over: false, close: false };
+  if (!box || sign.phase !== 'held') return { over: false, close: false, badge: null };
   const over = cursor.sx >= box.l - 4 && cursor.sx <= box.r + 4 && cursor.sy >= box.t - 4 && cursor.sy <= box.b + 4;
-  const c = signCloseAt();
-  const close = !!c && Math.hypot(cursor.sx - c.x, cursor.sy - c.y) <= c.r + 3;
-  return { over, close };
+  let badge = null;
+  if (over) {
+    const c = signContent();
+    for (const b of signBadges(c)) { const p = signBadgeAt(b.key); if (p && Math.hypot(cursor.sx - p.x, cursor.sy - p.y) <= p.r + 3) { badge = b.key; break; } }
+  }
+  return { over, close: badge === 'close', badge };
 }
 function dismissSign() {
   if (!sign || sign.phase !== 'held') return false;
@@ -3059,6 +3512,18 @@ function spawnSpark(burst = 0) {
     life: 0, dur: rand(0.9, 1.6), size: rand(2.5, 6.5), spin: rand(0, Math.PI),
   });
 }
+// a confetti cannon: coloured slips that burst up and tumble down
+const CONFETTI = ['#ff6fae', '#7c5cff', '#34d5c9', '#ffd166', '#3fe0a5', '#ffffff'];
+function spawnConfetti(n) {
+  if (!model) return;
+  const h = model.height;
+  for (let i = 0; i < n; i++) sparks.push({
+    x: rand(-0.15, 0.15) * h, y: rand(0.7, 1.0) * h,
+    vx: rand(-0.9, 0.9) * h, vy: rand(0.9, 2.1) * h,
+    life: 0, dur: rand(1.6, 2.6), size: rand(3, 6), spin: rand(0, Math.PI * 2),
+    confetti: pick(CONFETTI), spinV: rand(-8, 8), grav: 1.7 * h,
+  });
+}
 
 function updateFx(dt) {
   if (!model) return;
@@ -3072,7 +3537,7 @@ function updateFx(dt) {
   const wk = woundKeyNow();
   if (wk !== woundTexKey && model.figure) { woundTexKey = wk; const t0 = performance.now(), builtBefore = paintMs.builds; paintWounds(); paintMs.last = performance.now() - t0; paintMs.n++; if (paintMs.builds > builtBefore) paintMs.buildMs = Math.max(paintMs.buildMs, paintMs.last); else paintMs.max = Math.max(paintMs.max, paintMs.last); }
   flushWoundQueue();
-  for (const s of sparks) { s.life += dt; s.x += s.vx * dt; s.y += s.vy * dt; s.vy *= 1 - 0.6 * dt; }
+  for (const s of sparks) { s.life += dt; s.x += s.vx * dt; s.y += s.vy * dt; if (s.confetti) { s.vy -= s.grav * dt; s.vx *= 1 - 1.4 * dt; s.spin += s.spinV * dt; } else s.vy *= 1 - 0.6 * dt; }
   for (let i = sparks.length - 1; i >= 0; i--) if (sparks[i].life >= sparks[i].dur) sparks.splice(i, 1);
 
   const g = pet.glow, h = pet.hurt;
@@ -3501,12 +3966,15 @@ function drawFx() {
       _fv.set(pet.x + (c * sp.x - s * sp.y), pet.y + pet.bob + pet.crouch + (s * sp.x + c * sp.y), 0.3);
       const p = projFx(_fv);
       const r = sp.size * (0.6 + 0.4 * a);
-      fxg.save(); fxg.translate(p.x, p.y); fxg.rotate(sp.spin + k * 2);
-      fxg.globalAlpha = a * 0.95;
-      fxg.fillStyle = k < 0.5 ? '#fff4c2' : '#ffd36b';
-      fxg.beginPath();
-      for (let i = 0; i < 8; i++) { const rr = i % 2 ? r * 0.32 : r; const t = (i / 8) * Math.PI * 2; fxg.lineTo(Math.cos(t) * rr, Math.sin(t) * rr); }
-      fxg.closePath(); fxg.fill();
+      fxg.save(); fxg.translate(p.x, p.y); fxg.rotate(sp.spin + (sp.confetti ? 0 : k * 2));
+      fxg.globalAlpha = sp.confetti ? Math.min(1, (1 - k) * 3) : a * 0.95;
+      if (sp.confetti) { fxg.fillStyle = sp.confetti; fxg.fillRect(-r * 1.1, -r * 0.45, r * 2.2, r * 0.9); }
+      else {
+        fxg.fillStyle = k < 0.5 ? '#fff4c2' : '#ffd36b';
+        fxg.beginPath();
+        for (let i = 0; i < 8; i++) { const rr = i % 2 ? r * 0.32 : r; const t = (i / 8) * Math.PI * 2; fxg.lineTo(Math.cos(t) * rr, Math.sin(t) * rr); }
+        fxg.closePath(); fxg.fill();
+      }
       fxg.restore();
     }
     fxg.globalAlpha = 1;
@@ -3522,6 +3990,7 @@ function roundRect(g, x, y, w, h, r) {
 function step(dt) {
   T += dt;
   updateState(dt);
+  companionTick(dt);
   const root = model.root;
   const sq = clamp(pet.squash.update(1, dt), 0.6, 1.25);
   root.position.set(pet.x, pet.y + pet.bob + pet.crouch, 0);
@@ -3553,7 +4022,7 @@ function draw() {
   const hit = cursor.down && pet.grab ? (cursor.hit || 'hips') : hitTest();
   // the window only catches the mouse over her or over the open panel; everywhere else clicks go
   // to whatever is underneath (a chart, a browser) even while the panel is open
-  const sh = sign ? signHitTest() : { over: false, close: false };
+  const sh = sign ? signHitTest() : { over: false, close: false, badge: null };
   if (sign && sh.over !== sign.hover) sign.hover = sh.over;
   if (panelOpen) positionPanel(false);
   if (tourActive) { positionTour(); tourTick(); }
@@ -3562,11 +4031,11 @@ function draw() {
   if (panelOpen && cursor.seen) { const r = panelEl.getBoundingClientRect(); overPanel = cursor.sx >= r.left - 8 && cursor.sx <= r.right + 8 && cursor.sy >= r.top - 8 && cursor.sy <= r.bottom + 8; }
   if (!overPanel && tourActive && cursor.seen) { const r = tourEl.getBoundingClientRect(); overPanel = cursor.sx >= r.left - 8 && cursor.sx <= r.right + 8 && cursor.sy >= r.top - 8 && cursor.sy <= r.bottom + 8; }
   // only the close badge catches the mouse: clicks anywhere else on the board still reach the chart
-  const wantIgnore = !hit && !overPanel && !sh.close;
+  const wantIgnore = !hit && !overPanel && !sh.badge;
   if (wantIgnore !== lastIgnore) { bridge.setIgnore(wantIgnore); lastIgnore = wantIgnore; }
   cursor.hit = hit;
   updateBubble();
-  canvas.style.cursor = sh.close ? 'pointer' : hit ? (cursor.down ? 'grabbing' : 'grab') : 'default';
+  canvas.style.cursor = sh.badge ? 'pointer' : hit ? (cursor.down ? 'grabbing' : 'grab') : 'default';
 }
 
 let lastFrame = performance.now();
@@ -3582,7 +4051,7 @@ const CALM_AFTER = 2.5;   // seconds of stillness before easing off; covers a se
 let calmFor = 0;
 let drawnFrames = 0;   // frames actually rendered, so the cap can be measured rather than assumed
 function busy() {
-  return pet.state !== 'idle' || !!pet.micro || !pet.onGround || cursor.down || panelOpen
+  return (pet.state !== 'idle' && pet.state !== 'sleep') || !!pet.micro || !pet.onGround || cursor.down || panelOpen
     || sparks.length > 0 || pet.glow > 0
     || Math.abs(pet.vx) > 0.01 || Math.abs(pet.vy) > 0.01 || Math.abs(pet.theta) > 0.01
     || (sign && sign.phase !== 'hidden' && sign.phase !== 'held')
@@ -3682,6 +4151,17 @@ window.__petPaintMs = () => ({ ...paintMs });
 window.__petWoundSheets = () => { const o = {}; for (const k of ['face', 'skin']) for (const f of (model && model.figure && model.figure[k] ? model.figure[k].list : [])) if (f.woundCanvas) o[k] = f.woundCanvas.toDataURL('image/png'); return o; };
 window.__petWounds = () => pet.wounds.map((w) => ({ type: w.def.type, anchor: w.anchor === undefined ? 'pending' : w.anchor && { u: +w.anchor.u.toFixed(3), v: +w.anchor.v.toFixed(3), dr: w.anchor.dr.map((x) => +x.toFixed(2)), dd: w.anchor.dd.map((x) => +x.toFixed(2)) } }));
 window.__petSay = say;
+window.__petSetCfg = (p) => saveCfg(p);
+window.__petSleepNow = () => { pet.lastInteraction = T - SLEEP_AFTER - 30; lastTradeAt = T - SLEEP_AFTER - 30; if (pet.state !== 'sleep') setState('idle'); pet.micro = null; pet.nextActionAt = T + 999; };
+window.__petSignList = (on) => { signListMode = on === undefined ? !signListMode : !!on; if (sign) sign.text = ''; };
+window.__petScorecard = () => showScorecard(dayStats(), 'TODAY');
+window.__petCelebrate = (t) => celebrate(t || 'Test!');
+window.__petMood = (v) => (v === undefined ? pet.mood : (pet.mood = v));
+window.__petFlinch = () => { pet.flinchAt = T; };
+window.__petBadges = () => (sign ? signBadges(signContent()).map((b) => b.key) : []);
+window.__petBadgeClick = (k) => signBadgeAction(k);
+window.__petStats = () => (cfg ? { stats: cfg.stats, yesterday: cfg.yesterday, totalTrades: cfg.totalTrades, milestones: cfg.milestones } : null);
+window.__petConfetti = () => sparks.filter((s) => s.confetti).length;
 window.__petTour = {
   start: startTour,
   state: () => ({ active: tourActive, step: tourStep >= 0 ? TOUR[tourStep].key : null, visible: !!tourEl && !tourEl.hidden }),

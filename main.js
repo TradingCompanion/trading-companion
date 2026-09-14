@@ -78,6 +78,11 @@ function defaultSettings() { return {
   sign: true, signSize: 0.5, signStyle: 10, signHold: 'two', solPrice: 101.95, // the PnL sign she holds (10 = Aurora glass)
   wallets: '', relayUrl: '', relayToken: DEFAULT_RELAY_TOKEN, autoConnect: true,
   sounds: { ...DEFAULT_SOUNDS },
+  // the companion: her "are you sure?" look, the sell nudge, where a coin opens, quiet mode, the screen she lives on
+  guard: true, nudgePct: 50, nudgeMin: 30, openWith: 'axiom',
+  quietBubbles: false, quietReactions: false, quietBoard: false, quietSounds: false, dndUntil: 0,
+  display: null,                     // a display id from Electron's screen module; null = the primary
+  lastGreetDay: '', stats: null, yesterday: null, totalTrades: 0, milestones: {},
 }; }
 let settings = defaultSettings();
 let ignoring = null; // unknown until setIgnore() has been applied once (a transparent window is NOT click-through by default)
@@ -126,8 +131,20 @@ function writeSettingsNow() {
 // whole settings file sixty times a second for as long as the user holds the handle.
 function saveSettings() { if (!saveTimer) saveTimer = setTimeout(writeSettingsNow, 400); }
 
-function workArea() {
-  return screen.getPrimaryDisplay().workArea;
+// the display she lives on: the one chosen in her settings, or the primary
+function herDisplay() {
+  const all = screen.getAllDisplays();
+  return (settings.display != null && all.find((d) => d.id === settings.display)) || screen.getPrimaryDisplay();
+}
+function workArea() { return herDisplay().workArea; }
+function displaysList() {
+  const primary = screen.getPrimaryDisplay().id;
+  return screen.getAllDisplays().map((d, i) => ({ id: d.id, primary: d.id === primary, label: `Screen ${i + 1} · ${d.size.width}×${d.size.height}${d.id === primary ? ' (main)' : ''}` }));
+}
+function placeOnDisplay() {
+  if (!win) return;
+  const wa = workArea();
+  win.setBounds({ x: wa.x, y: wa.y, width: wa.width, height: wa.height });
 }
 
 function createWindow() {
@@ -206,7 +223,7 @@ function buildStamp() {
 }
 function sendSettings() {
   if (!win) return;
-  win.webContents.send('settings', { ...settings, defaultSounds: DEFAULT_SOUNDS, soundFiles: listSoundFiles(), build: buildStamp() });
+  win.webContents.send('settings', { ...settings, defaultSounds: DEFAULT_SOUNDS, soundFiles: listSoundFiles(), build: buildStamp(), displays: displaysList() });
 }
 
 let pendingModel = null; // persisted only once the renderer has parsed it (a broken file must not become the saved model)
@@ -247,6 +264,10 @@ function buildMenu() {
     { label: 'Load VRM model…', click: pickModel },
     { label: 'Default model', click: () => sendModel(DEFAULT_MODEL) },
     { label: 'Size', submenu: [size('Small', 220), size('Medium', 320), size('Large', 460), size('Huge', 640)] },
+    ...(screen.getAllDisplays().length > 1 ? [{ label: 'Screen', submenu: displaysList().map((d) => ({
+      label: d.label, type: 'radio', checked: settings.display == null ? d.primary : settings.display === d.id,
+      click: () => { settings.display = d.id; saveSettings(); placeOnDisplay(); sendSettings(); },
+    })) }] : []),
     {
       label: 'Always on top', type: 'checkbox', checked: settings.alwaysOnTop,
       click: (item) => {
@@ -294,6 +315,13 @@ ipcMain.on('open-sounds-folder', () => {
   shell.openPath(dir);
 });
 ipcMain.on('rescan-sounds', () => sendSettings());
+// a coin, in the browser. Only http(s) — this is the one place the renderer can ask the OS to open something.
+ipcMain.on('open-external', (_e, url) => { if (typeof url === 'string' && /^https:\/\/(axiom\.trade|pump\.fun|dexscreener\.com)\//.test(url)) shell.openExternal(url); });
+ipcMain.on('set-display', (_e, id) => {
+  if (!screen.getAllDisplays().some((d) => d.id === id)) return;
+  settings.display = id; saveSettings(); placeOnDisplay(); sendSettings();
+  if (tray) tray.setContextMenu(buildMenu());
+});
 ipcMain.on('default-model', () => sendModel(DEFAULT_MODEL));
 ipcMain.on('model-ready', () => { if (pendingModel) { settings.model = pendingModel; pendingModel = null; saveSettings(); } });
 ipcMain.on('model-failed', () => {
@@ -332,11 +360,8 @@ app.whenReady().then(async () => {
   if (process.env.PET_SIZE) settings.sizePx = Number(process.env.PET_SIZE);
   createWindow();
   createTray();
-  screen.on('display-metrics-changed', () => {
-    if (!win) return;
-    const wa = workArea();
-    win.setBounds({ x: wa.x, y: wa.y, width: wa.width, height: wa.height });
-  });
+  // screens come and go: keep her on hers, or fall back to the primary if it was unplugged
+  for (const ev of ['display-metrics-changed', 'display-added', 'display-removed']) screen.on(ev, () => { placeOnDisplay(); sendSettings(); if (tray) tray.setContextMenu(buildMenu()); });
   if (TEST) { if (process.env.PET_PROBE) runProbe(); else runSelfTest(); }
 });
 
@@ -536,6 +561,7 @@ async function runSelfTest() {
     expect('throwing her completes the throw step', ts.step === 'look');
     expect('the look step opens the Look tab and points at it', await js("!document.getElementById('panel').hidden && !!document.querySelector('#panel .tabs button.tour-hi[data-tab=look]')"));
     const apart = (a, b) => !!a && !!b && (a.right <= b.left || a.left >= b.right || a.bottom <= b.top || a.top >= b.bottom);
+    console.log('[test] tour box', JSON.stringify(await js('window.__petTour.box()')), 'panel box', JSON.stringify(await panelBox()), 'her', JSON.stringify(await info()));
     expect('the card and the panel do not overlap', apart(await js('window.__petTour.box()'), await panelBox()));
     // against the right edge the panel moves to her left; the card must still stay clear of it
     await js('window.__pet.x = window.__petBounds().max'); await adv(0.3);
@@ -631,6 +657,7 @@ async function runSelfTest() {
     expect('paste works in the wallet field', await js("document.querySelector('#panel #fWallets').value") === 'PasteTestWa11etAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
     await js("document.querySelector('#panel #fWallets').value = ''");
     expect('she comes in Huge by default', defaultSettings().sizePx === 640);
+    expect('she knows which screens there are', displaysList().length >= 1 && displaysList().some((d) => d.primary));
     await js('window.__petPanel(false)'); await adv(0.2);
     await js("window.__petReact({ side: 'sell', symbol: 'PEPE', quote: 'SOL', amount: 1.42, pnl: 0.61, pnlPct: 75 })"); await adv(0.7);
     const ic1 = await shot('15-profit.png'); expect('profit -> cheer', ic1.state === 'cheer');
@@ -809,9 +836,9 @@ async function runSelfTest() {
     expect('the board that is up stays up until it can be read', bs.id === firstId);
     expect('every position is tracked', (await js('window.__petOpenCount()')) === 4);
     expect('the board says how many are open', /4 open/.test(bs.content.foot || ''));
-    await relayMsg({ type: 'price', mint: rm(1), price: 1, quote: 'SOL', mcQuote: 60, ts: Date.now() });
+    await relayMsg({ type: 'price', mint: rm(1), price: 1, quote: 'SOL', mcQuote: 45, ts: Date.now() });   // +50 %: re-priced, not yet a gasp
     await adv(0.3);
-    expect('a waiting board still re-prices itself', /\+1\.00 SOL/.test((await signState()).text));
+    expect('a waiting board still re-prices itself', /\+0\.500 SOL/.test((await signState()).text));
     await adv(3.2);
     expect('then it hands over to the newest position', (await signState()).id === 'pos:' + rm(4));
     // a relay reconnect resends open bags as history; she must not drop the board
@@ -832,6 +859,67 @@ async function runSelfTest() {
     // once the session total is no longer news, she puts the board away entirely
     await adv(26);
     expect('a stale session total is put away', (await signState()).content === null);
+
+    // ---- alive: the market, the guard, the board's other faces, the day, quiet, sleep -----------
+    const am = 'AliveMint' + 'a'.repeat(34);
+    await relayMsg({ type: 'trade', side: 'buy', mint: am, symbol: 'ALIVE', quote: 'SOL', amount: 1, tokens: 1e6, mcQuote: 30, remainingTokens: 1e6, remainingCost: 1 }); await adv(2.5);
+    await relayMsg({ type: 'price', mint: am, price: 2.1e-6, quote: 'SOL', mcQuote: 63, ts: Date.now() }); await adv(0.4);
+    let ia = await info();
+    expect('a coin she holds going 2x makes her gasp', ia.state === 'gasp');
+    expect('and the board points at it', (await signState()).id === 'pos:' + am);
+    expect('the badges: close, open, copy, flip', JSON.stringify((await js('window.__petBadges()')).sort()) === JSON.stringify(['close', 'copy', 'list', 'open']));
+    await adv(3);
+    await relayMsg({ type: 'price', mint: am, price: 5e-7, quote: 'SOL', mcQuote: 15, ts: Date.now() }); await adv(0.4);
+    ia = await info();
+    expect('and dumping makes her wince', ia.state === 'wince');
+    await adv(3);
+    // the flipped board: every open bag on one card
+    const bm = 'AliveMint' + 'b'.repeat(34);
+    await relayMsg({ type: 'trade', side: 'buy', mint: bm, symbol: 'BAGTWO', quote: 'SOL', amount: 0.5, tokens: 1e6, mcQuote: 30, remainingTokens: 1e6, remainingCost: 0.5 }); await adv(2.5);
+    await js('window.__petBadgeClick("list")'); await adv(0.5);
+    let lst = await signState();
+    expect('the flip badge shows every open bag', !!lst.content && lst.content.id === 'list' && lst.content.lines.length === 2);
+    expect('best bag first', !!lst.content && lst.content.lines[0].sym === '$BAGTWO' && lst.content.lines[1].sym === '$ALIVE');
+    await sleep(300); await shot('27-list-board.png');
+    await js('window.__petBadgeClick("list")'); await adv(0.5);
+    expect('and flips back', (await signState()).content.id.startsWith('pos:'));
+    // the "are you sure?" look: a loss, then the same coin bought straight back
+    await relayMsg({ type: 'trade', side: 'sell', mint: bm, symbol: 'BAGTWO', quote: 'SOL', amount: 0.3, tokens: 1e6, mcQuote: 18, pnl: -0.2, pnlPct: -40, cost: 0.5, remainingTokens: 0, remainingCost: 0 }); await adv(5.5);
+    await relayMsg({ type: 'trade', side: 'buy', mint: bm, symbol: 'BAGTWO', quote: 'SOL', amount: 0.3, tokens: 1e6, mcQuote: 18, remainingTokens: 1e6, remainingCost: 0.3 }); await adv(0.4);
+    ia = await info();
+    expect('buying back a coin just sold at a loss earns the look', ia.state === 'guard');
+    expect('and she says so', /sure|again|Chasing/.test(await js('window.__petBubbleText()')));
+    await sleep(300); await shot('28-guard.png');
+    await adv(3.5);
+    // the day's card and the numbers behind it
+    const stats = await js('window.__petStats()');
+    console.log('[test] day stats:', JSON.stringify(stats.stats));
+    expect('the day keeps score', !!stats.stats && stats.stats.trades >= 5 && stats.stats.wins >= 4 && stats.stats.losses >= 1 && !!stats.stats.worst && stats.stats.worst.pnl <= -0.2 && !!stats.stats.best && stats.totalTrades > 0);
+    await js('window.__petScorecard()'); await adv(2.5);
+    const card = await signState();
+    expect('the scorecard is a board of its own', !!card.content && card.content.id === 'day' && /trade/.test(card.content.sub) && /best/.test(card.content.foot || ''));
+    await sleep(300); await shot('29-scorecard.png');
+    // a milestone: confetti
+    await js("window.__petCelebrate('Test!')"); await adv(0.3);
+    expect('a celebration fires the confetti cannon', (await js('window.__petConfetti()')) > 30 && (await info()).state === 'cheer');
+    await sleep(200); await shot('30-confetti.png');
+    await adv(4);
+    // do not disturb: the numbers move, she does not
+    await js('window.__petSetCfg({ dndUntil: Date.now() + 60000 })'); await adv(0.2);
+    const bubbleBefore = await js('window.__petBubbleText()');
+    await js("window.__petReact({ side: 'sell', symbol: 'PEPE', quote: 'SOL', amount: 1.42, pnl: 0.61, pnlPct: 75 })"); await adv(0.4);
+    expect('do not disturb keeps her still and silent', (await info()).state === 'idle' && (await js('window.__petBubbleText()')) === bubbleBefore && (await signState()).content === null);
+    await js('window.__petSetCfg({ dndUntil: 0 })'); await adv(0.3);
+    // twenty quiet minutes: she dozes off; a trade wakes her with a jolt
+    await js('window.__petSleepNow()'); await adv(6);
+    expect('left alone for twenty minutes she falls asleep', (await info()).state === 'sleep');
+    await sleep(300); await shot('31-asleep.png');
+    await js("window.__petReact({ side: 'buy', symbol: 'MOON', quote: 'SOL', amount: 0.5 })"); await adv(0.3);
+    expect('a trade wakes her with a jolt', (await info()).state === 'wake');
+    await adv(1.5);
+    expect('and she is up again', (await info()).state !== 'sleep' && (await info()).state !== 'wake');
+    expect('her mood carries the day', (await js('window.__petMood()')) > 0.3);
+    await adv(2);
 
     if (process.env.PET_TEST_RELAY) {
       const [u, t, w] = process.env.PET_TEST_RELAY.split('|');
