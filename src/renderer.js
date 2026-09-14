@@ -265,6 +265,7 @@ async function loadModel(buffer, name) {
     springResetPending = 2;
     bridge.log(`loaded ${name} (${height.toFixed(2)}u tall, ${Object.keys(bones).length} bones)`);
     bridge.modelReady();
+    if (cfg && !cfg.tourDone && !tourActive) setTimeout(startTour, 900);
   } catch (e) {
     bridge.log(`load failed: ${e.message}`);
     loadingEl.textContent = `Failed to load model: ${e.message}`;
@@ -325,8 +326,10 @@ function logSound(name) {
   a.push(name);
   if (a.length > 400) a.splice(0, a.length - 400);
 }
+const LOOK_KEYS = new Set(['bust', 'jiggle', 'cleavage', 'skirtLen', 'hips', 'waist', 'thighs', 'headSize', 'outfit', 'topStyle', 'bottomStyle', 'bow', 'hairColor', 'eyeColor', 'customVest', 'customSkirt', 'customBow']);
 function saveCfg(patch) {
   if (!cfg) return;
+  if (Object.keys(patch).some((k) => LOOK_KEYS.has(k))) tourFlag('look');
   if (patch.sounds) cfg.sounds = { ...cfg.sounds, ...patch.sounds };
   Object.assign(cfg, patch.sounds ? { ...patch, sounds: cfg.sounds } : patch);
   if (voice && ('volume' in patch || 'pitch' in patch)) voice.set({ volume: cfg.volume, pitch: cfg.pitch });
@@ -388,31 +391,38 @@ function updateBubble() {
 }
 
 // what she says (sym, amount, pct) — no lorem, she's talking about your trade
+// The last argument of every line is the user's name, or '' before they have given one; each line
+// reads naturally either way. The name is what she was told in the tour (Her tab to change it).
+const who = () => String(cfg?.userName || '').trim().slice(0, 24);
+const line = (list, ...args) => pick(list)(...args, who());
 const LINES = {
   greet: [
-    (n) => `Hi! I'm ${n}~`, (n) => `${n} here. Need something?`, (n) => `Ehehe, hello!`, (n) => `Un! I'm watching~`,
+    (n, y) => y ? `Hi ${y}! It's ${n}~` : `Hi! I'm ${n}~`, (n, y) => y ? `${n} here, ${y}. Need something?` : `${n} here. Need something?`,
+    (n, y) => y ? `Ehehe, hello ${y}!` : `Ehehe, hello!`, (n, y) => y ? `Un! I'm watching, ${y}~` : `Un! I'm watching~`,
   ],
   buy: [
-    (s, a) => `Ooh, ${s}! ${a} in. Good luck~`, (s, a) => `New position: ${s}. Watching it with you!`,
-    (s, a) => `${s}? Interesting choice…`, (s, a) => `${a} into ${s}. Let's go~`,
+    (s, a, y) => y ? `Ooh ${y}, ${s}! ${a} in. Good luck~` : `Ooh, ${s}! ${a} in. Good luck~`, (s, a, y) => `New position: ${s}. Watching it with you${y ? ', ' + y : ''}!`,
+    (s, a, y) => `${s}? Interesting choice${y ? ', ' + y : ''}…`, (s, a, y) => `${a} into ${s}. Let's go${y ? ', ' + y : ''}~`,
   ],
   profit: [
-    (s, a) => `Nice trade! ${a} on ${s}~`, (s, a) => `${s} paid out! ${a}!`, (s, a) => `You did it! ${a}~`,
-    (s, a, p) => `Ehehe, ${a}. That's ${p.toFixed(0)}%!`, (s, a) => `Clean. ${a} on ${s}.`,
+    (s, a, p, y) => y ? `Good job ${y}! ${a} on ${s}~` : `Nice trade! ${a} on ${s}~`, (s, a, p, y) => `${s} paid out${y ? ', ' + y : ''}! ${a}!`,
+    (s, a, p, y) => `You did it${y ? ', ' + y : ''}! ${a}~`, (s, a, p, y) => `Ehehe, ${a}. That's ${p.toFixed(0)}%${y ? ', ' + y : ''}!`,
+    (s, a, p, y) => `Clean${y ? ', ' + y : ''}. ${a} on ${s}.`,
   ],
   bigProfit: [
-    (s, a) => `WAAA ${a} on ${s}!!`, (s, a, p) => `That's huge! ${a}, ${p.toFixed(0)}%!`, (s, a) => `${a}?! You're amazing!`,
+    (s, a, p, y) => `WAAA ${y ? y + '! ' : ''}${a} on ${s}!!`, (s, a, p, y) => `That's huge${y ? ', ' + y : ''}! ${a}, ${p.toFixed(0)}%!`,
+    (s, a, p, y) => `${a}?! ${y ? y + ', you' : 'You'}'re amazing!`,
   ],
   loss: [
-    (s, a) => `It's okay… only ${a} on ${s}. Next one.`, (s, a) => `${s} was a bad one. You're still good.`,
-    (s, a) => `Mm… ${a}. I'm here, okay?`, (s) => `Losses happen. Breathe~`, (s, a) => `${a}. Don't chase it.`,
+    (s, a, p, y) => `It's okay${y ? ' ' + y : ''}… only ${a} on ${s}. Next one.`, (s, a, p, y) => `${s} was a bad one. You're still good${y ? ', ' + y : ''}.`,
+    (s, a, p, y) => `Mm… ${a}. I'm here${y ? ', ' + y : ''}, okay?`, (s, a, p, y) => `Losses happen${y ? ', ' + y : ''}. Breathe~`, (s, a, p, y) => `${a}. Don't chase it${y ? ', ' + y : ''}.`,
   ],
   bigLoss: [
-    (s, a) => `…${a}. Come here. It's going to be fine.`, (s, a) => `That hurt. Take a break, I'll wait here.`,
-    (s, a) => `${a} on ${s}… it's just one trade. You're not done.`,
+    (s, a, p, y) => `…${a}. Come here${y ? ', ' + y : ''}. It's going to be fine.`, (s, a, p, y) => `That hurt. Take a break${y ? ', ' + y : ''}, I'll wait here.`,
+    (s, a, p, y) => `${a} on ${s}… it's just one trade${y ? ', ' + y : ''}. You're not done.`,
   ],
   flat: [
-    (s, a) => `Flat on ${s}. Clean exit~`, (s, a) => `Sold ${s} for ${a}. Even.`, (s) => `${s} closed. No harm done.`,
+    (s, a, y) => `Flat on ${s}. Clean exit${y ? ', ' + y : ''}~`, (s, a, y) => `Sold ${s} for ${a}. Even${y ? ', ' + y : ''}.`, (s, a, y) => `${s} closed. No harm done${y ? ', ' + y : ''}.`,
   ],
 };
 
@@ -435,6 +445,7 @@ function walletsList() { return ((cfg && cfg.wallets) || '').split(/[\s,]+/).fil
 function connectRelay() {
   if (!cfg) return;
   const wallets = walletsList();
+  if (wallets.length) tourFlag('wallet');
   if (!wallets.length) { relayStatus = 'err'; relayInfo = 'Enter a wallet address first.'; refreshRelayStatus(); return; }
   disconnectRelay(true);
   let url;
@@ -602,7 +613,7 @@ function reactToTrade(t) {
   const busy = pet.state === 'grabbed' || pet.state === 'falling';
   pet.lastInteraction = T;
   if (t.side === 'buy') {
-    sound('buy', { cooldown: 1.4 }); say(pick(LINES.buy)(sym, money(t.amount)));
+    sound('buy', { cooldown: 1.4 }); say(line(LINES.buy, sym, money(t.amount)));
     if (!busy) setState('notice');
     return;
   }
@@ -613,17 +624,17 @@ function reactToTrade(t) {
   if (pnl >= thr) {
     const big = (t.quote === 'USDC' ? pnl >= 150 : pnl >= 1) || pct >= 100;
     sound(big ? 'bigProfit' : 'profit', { cooldown: 1.2 });
-    say(pick(big ? LINES.bigProfit : LINES.profit)(sym, '+' + money(pnl), pct), undefined, 1);
+    say(line(big ? LINES.bigProfit : LINES.profit, sym, '+' + money(pnl), pct), undefined, 1);
     if (!busy) { pet.happy = 1; setState('cheer'); }
     addGlow(big ? 1 : 0.7); healHurt(big ? 0.6 : 0.35);
   } else if (pnl <= -thr) {
     const big = (t.quote === 'USDC' ? pnl <= -150 : pnl <= -1) || pct <= -50;
     sound(big ? 'bigLoss' : 'loss', { cooldown: 1.2 });
-    say(pick(big ? LINES.bigLoss : LINES.loss)(sym, '−' + money(pnl), pct), undefined, -1);
+    say(line(big ? LINES.bigLoss : LINES.loss, sym, '−' + money(pnl), pct), undefined, -1);
     if (!busy) setState('comfort');
     addHurt(big ? 0.75 : 0.45);
   } else {
-    sound('sell', { cooldown: 1.2 }); say(pick(LINES.flat)(sym, money(t.amount)));
+    sound('sell', { cooldown: 1.2 }); say(line(LINES.flat, sym, money(t.amount)));
     if (!busy) setState('notice');
   }
 }
@@ -693,6 +704,9 @@ function renderPanel() {
         <div class="f">${lab('Pitch', (c.pitch ?? 1).toFixed(2) + '×')}<input type="range" id="fPitch" min="0.75" max="1.35" step="0.01" value="${c.pitch ?? 1}"></div></div>
       <div class="row"><label class="sw mini" style="flex:1"><input type="checkbox" id="fMute"${c.muted ? ' checked' : ''}>Mute</label>
         <button class="ghost fix" id="btnVoiceTest">Test voice</button></div>
+      <div class="sep"></div>
+      <div class="f"><label><span>Your name</span><b>what she calls you</b></label><input type="text" id="fUserName" value="${esc(c.userName || '')}" placeholder="Alex" maxlength="24" spellcheck="false"></div>
+      <div class="row"><button class="ghost" id="btnTour">Replay tutorial</button><button class="ghost danger" id="btnReset">Reset everything</button></div>
     </div>
 
     <div class="pg" data-pg="look"${pg('look')}>
@@ -804,7 +818,13 @@ function renderPanel() {
   $('fPitch').oninput = (e) => { saveCfg({ pitch: Number(e.target.value) }); readout(e.target, cfg.pitch.toFixed(2) + '×'); };
   $('fPitch').onchange = () => playAssigned(cfg.sounds.click || 'hai');
   $('fMute').onchange = (e) => saveCfg({ muted: e.target.checked });
-  $('btnVoiceTest').onclick = () => { playAssigned(pick([cfg.sounds.click, cfg.sounds.profit, cfg.sounds.connect, cfg.sounds.hover].filter(Boolean)) || 'hai'); say(pick(LINES.greet)(herName())); };
+  $('fUserName').onchange = (e) => saveCfg({ userName: e.target.value.trim().slice(0, 24) });
+  $('btnTour').onclick = () => { closePanel(); startTour(); };
+  $('btnReset').onclick = () => {
+    if (!confirm('Reset everything? Her look, your name, the wallet and every other setting go back to how she came. The tutorial runs again.')) return;
+    closePanel(); bridge.resetSettings();
+  };
+  $('btnVoiceTest').onclick = () => { playAssigned(pick([cfg.sounds.click, cfg.sounds.profit, cfg.sounds.connect, cfg.sounds.hover].filter(Boolean)) || 'hai'); say(line(LINES.greet, herName())); };
   const reconnectIfLive = () => { if (relay || relayStatus === 'connecting') connectRelay(); };
   $('fWallets').onchange = (e) => { saveCfg({ wallets: e.target.value.trim() }); reconnectIfLive(); };
   $('fRelay').onchange = (e) => { saveCfg({ relayUrl: e.target.value.trim() }); reconnectIfLive(); };
@@ -842,6 +862,7 @@ function positionPanel(measure = true) {
 }
 function openPanel(tab) {
   if (!panelEl || !cfg) return;
+  if (!tab) tourFlag('panel');   // opened by a click on her, not by the tour itself
   if (tab) panelTab = tab;
   panelOpen = true; panelEl.hidden = false;
   if (pet.state === 'walk') setState('idle');   // stand still while her settings are open
@@ -856,6 +877,103 @@ function togglePanel() { if (panelOpen) closePanel(); else openPanel(); }
 
 // she must not be holding anything open while she is being thrown around
 function closeHer() { if (panelOpen) closePanel(); }
+
+// ---------------------------------------------------------------- the first-run tour
+// She walks a new user through herself: a card in the panel's glass beside her, with a tail toward
+// her and her own voice in the bubble. Steps that ask for something wait for it (a click, a throw,
+// a wallet); the rest step on a button. It runs once, on the first boot, and again from the Her
+// tab or after a reset. Nothing here blocks her: she still reacts, walks and talks throughout.
+const tourEl = document.getElementById('tour');
+const TOUR = [
+  { key: 'name', eyebrow: 'Welcome', title: "Hi! I'm Yui", body: "I'll live down here on your taskbar and react to your trades. First — what should I call you?",
+    input: true, cta: 'Nice to meet you', say: () => 'Hi! What should I call you?' },
+  { key: 'click', eyebrow: 'Step 1 of 5', title: 'Click me once', body: 'That opens my settings. Click me again to put them away, or press Escape.',
+    wait: 'waiting for a click', flag: 'panel', skip: 'Skip', say: (y) => `Click me${y ? ', ' + y : ''}~` },
+  { key: 'throw', eyebrow: 'Step 2 of 5', title: 'Pick me up', body: 'Grab me anywhere and drag. Let go while moving and I fly. I land on my feet. Mostly.',
+    wait: 'waiting for a throw', flag: 'throw', skip: 'Skip', say: (y) => `Throw me${y ? ', ' + y : ''}! I can take it~` },
+  { key: 'look', eyebrow: 'Step 3 of 5', title: 'Dress me up', body: 'The Look tab: outfit, hair, the shape of me. Everything applies live and is remembered.',
+    highlight: 'look', flag: 'look', cta: 'Next', say: () => 'Make me cute~' },
+  { key: 'wallet', eyebrow: 'Step 4 of 5', title: 'Show me your wallet', body: "The Wallet tab: paste the public address you buy from and I react to every buy and sell. I only read it — I never ask you to sign anything.",
+    highlight: 'wallet', flag: 'wallet', skip: 'Later', say: () => 'Whose bags am I watching?' },
+  { key: 'done', eyebrow: 'That is everything', title: (y) => `Have fun${y ? ', ' + y : ''}!`, body: 'I glow when you win and bruise when you lose. The Her tab replays this or resets me if you ever want a fresh start.',
+    cta: "Let's go", say: (y) => `Good luck out there${y ? ', ' + y : ''}~` },
+];
+let tourActive = false, tourStep = -1, tourStepAt = 0;
+const tourFlags = { panel: false, throw: false, look: false, wallet: false };
+function tourFlag(k) { if (tourActive && k in tourFlags) tourFlags[k] = true; }
+function startTour() {
+  if (!tourEl || !model) return;
+  for (const k in tourFlags) tourFlags[k] = false;
+  tourActive = true; tourStep = -1;
+  if (pet.state === 'walk') setState('idle');
+  tourGo(0);
+}
+function endTour() {
+  tourActive = false; tourStep = -1;
+  tourEl.hidden = true; tourEl.innerHTML = '';
+  tourHighlight(null);
+  saveCfg({ tourDone: true });
+}
+function tourHighlight(tab) {
+  if (!panelEl) return;
+  for (const b of panelEl.querySelectorAll('.tabs button')) b.classList.toggle('tour-hi', !!tab && b.dataset.tab === tab);
+}
+function tourGo(i) {
+  if (i >= TOUR.length) { endTour(); return; }
+  tourStep = i; tourStepAt = T;
+  const st = TOUR[i], y = who();
+  const title = typeof st.title === 'function' ? st.title(y) : st.title;
+  tourEl.className = '';
+  tourEl.innerHTML = `<span class="tail"></span><div class="eyebrow">${esc(st.eyebrow)}</div><h3>${esc(title)}</h3><p>${esc(st.body)}</p>`
+    + (st.input ? `<input type="text" id="tourName" placeholder="Alex" maxlength="24" spellcheck="false" value="${esc(y)}">` : '')
+    + `<div class="actions">`
+    + (st.cta ? `<button id="tourNext">${esc(st.cta)}</button>` : `<span class="wait">${esc(st.wait)}</span>`)
+    + (st.skip ? `<button class="ghost" id="tourSkip">${esc(st.skip)}</button>` : '')
+    + `<span class="dots">${TOUR.map((_, k) => `<i class="${k < i ? 'done' : k === i ? 'on' : ''}"></i>`).join('')}</span></div>`;
+  tourEl.hidden = false;
+  positionTour();
+  const next = tourEl.querySelector('#tourNext'), skip = tourEl.querySelector('#tourSkip'), input = tourEl.querySelector('#tourName');
+  const advance = () => {
+    if (input) saveCfg({ userName: input.value.trim().slice(0, 24) });
+    tourGo(i + 1);
+  };
+  if (next) next.onclick = advance;
+  if (skip) skip.onclick = () => tourGo(i + 1);
+  if (input) { input.onkeydown = (e) => { if (e.key === 'Enter') advance(); }; setTimeout(() => input.focus(), 50); }
+  // she points at the tab the step is about, with it open in front of the user
+  if (st.highlight) { openPanel(st.highlight); }
+  tourHighlight(st.highlight || null);
+  if (st.say) say(st.say(y), 5);
+  if (st.key === 'done') setState('wave');
+}
+// steps that wait for the user move on the moment it happens
+function tourTick() {
+  if (!tourActive || tourStep < 0) return;
+  const st = TOUR[tourStep];
+  if (st.flag && tourFlags[st.flag] && T - tourStepAt > 0.4) {
+    if (st.flag === 'panel') sound('click');
+    tourGo(tourStep + 1);
+  }
+}
+// beside her, on the side the panel is not using, following her as she moves
+let tourLeft = -1, tourTop = -1;
+function positionTour() {
+  if (!tourEl || tourEl.hidden || !model) return;
+  const sp = toScreen(pet.x, pet.y);
+  const w = tourEl.offsetWidth || 292, h = tourEl.offsetHeight || 200;
+  const gap = sizePx * 0.30 + 12;
+  // the panel takes her right when there is room; the card takes the other side
+  const panelRight = sp.x + gap + panelW <= W - 12;
+  let left = panelRight ? sp.x - gap - w : sp.x + gap;
+  let side = panelRight ? 'left' : 'right';
+  if (left < 12) { left = sp.x + gap; side = 'right'; }
+  if (left + w > W - 12) { left = sp.x - gap - w; side = 'left'; }
+  left = clamp(left, 12, W - w - 12);
+  const top = clamp(sp.y - sizePx * 0.78 - 30, 12, H - h - 12);   // level with her head, where the tail points
+  tourEl.classList.toggle('left', side === 'left'); tourEl.classList.toggle('right', side === 'right');
+  if (Math.abs(left - tourLeft) > 0.5) { tourEl.style.left = left.toFixed(1) + 'px'; tourLeft = left; }
+  if (Math.abs(top - tourTop) > 0.5) { tourEl.style.top = top.toFixed(1) + 'px'; tourTop = top; }
+}
 window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeHer(); });
 
 // ---------------------------------------------------------------- pet state
@@ -929,6 +1047,7 @@ let downPanelOpen = false; // whether her settings were up when the press began
 window.addEventListener('mousedown', (e) => {
   if (!realInput(e)) return;
   if (panelOpen && e.target instanceof Node && panelEl.contains(e.target)) return; // let the panel handle its own clicks
+  if (tourActive && e.target instanceof Node && tourEl.contains(e.target)) return;
   updateCursor(e.clientX, e.clientY);
   if (!model) return;
   if (e.button === 0 && signHitTest().close) { e.preventDefault(); dismissSign(); return; } // the X on her sign
@@ -960,7 +1079,7 @@ window.addEventListener('mouseup', (e) => {
       setState(pet.onGround ? 'wave' : 'falling');
       // The press already put her settings away, so a click with them open is "close" and must
       // not toggle them straight back; one with them closed opens them.
-      if (!downPanelOpen && pet.onGround) { openPanel(); sound('click'); say(pick(LINES.greet)(herName())); }
+      if (!downPanelOpen && pet.onGround) { openPanel(); sound('click'); say(line(LINES.greet, herName())); }
     }
     return;
   }
@@ -990,6 +1109,7 @@ bridge.onSettings((s) => {
   layout();
   applyFigure(); applyFigureTextures();
   if (panelOpen) { renderPanel(); positionPanel(); }
+  if (!first && !s.tourDone && !tourActive && model) { if (relay) disconnectRelay(); resetTradingState(); setTimeout(startTour, 600); }   // a reset from the panel
   if (first && s.autoConnect && !relay) setTimeout(connectRelay, 1500);
 });
 let settingsApplied = false;
@@ -1018,6 +1138,7 @@ function beginGrab(boneName) {
 function releaseGrab() {
   if (!pet.grab) return;
   const g = pet.grab;
+  tourFlag('throw');
   // throw velocity from the cursor's recent motion (px/s -> world/s)
   pet.vx = clamp(cursor.vx / ppu, -14, 14);
   pet.vy = clamp(-cursor.vy / ppu, -14, 14);
@@ -3393,9 +3514,11 @@ function draw() {
   const sh = sign ? signHitTest() : { over: false, close: false };
   if (sign && sh.over !== sign.hover) sign.hover = sh.over;
   if (panelOpen) positionPanel(false);
+  if (tourActive) { positionTour(); tourTick(); }
   if (panelOpen && panelTab === 'wallet' && T - lastTradeTick > 1) { lastTradeTick = T; refreshRelayStatus(); }
   let overPanel = false;
   if (panelOpen && cursor.seen) { const r = panelEl.getBoundingClientRect(); overPanel = cursor.sx >= r.left - 8 && cursor.sx <= r.right + 8 && cursor.sy >= r.top - 8 && cursor.sy <= r.bottom + 8; }
+  if (!overPanel && tourActive && cursor.seen) { const r = tourEl.getBoundingClientRect(); overPanel = cursor.sx >= r.left - 8 && cursor.sx <= r.right + 8 && cursor.sy >= r.top - 8 && cursor.sy <= r.bottom + 8; }
   // only the close badge catches the mouse: clicks anywhere else on the board still reach the chart
   const wantIgnore = !hit && !overPanel && !sh.close;
   if (wantIgnore !== lastIgnore) { bridge.setIgnore(wantIgnore); lastIgnore = wantIgnore; }
@@ -3516,6 +3639,16 @@ window.__petPaintMs = () => ({ ...paintMs });
 window.__petWoundSheets = () => { const o = {}; for (const k of ['face', 'skin']) for (const f of (model && model.figure && model.figure[k] ? model.figure[k].list : [])) if (f.woundCanvas) o[k] = f.woundCanvas.toDataURL('image/png'); return o; };
 window.__petWounds = () => pet.wounds.map((w) => ({ type: w.def.type, anchor: w.anchor === undefined ? 'pending' : w.anchor && { u: +w.anchor.u.toFixed(3), v: +w.anchor.v.toFixed(3), dr: w.anchor.dr.map((x) => +x.toFixed(2)), dd: w.anchor.dd.map((x) => +x.toFixed(2)) } }));
 window.__petSay = say;
+window.__petTour = {
+  start: startTour,
+  state: () => ({ active: tourActive, step: tourStep >= 0 ? TOUR[tourStep].key : null, visible: !!tourEl && !tourEl.hidden }),
+  name: (n) => { const i = tourEl && tourEl.querySelector('#tourName'); if (i) { i.value = n; i.onkeydown({ key: 'Enter' }); } },
+  next: () => { const b = tourEl && tourEl.querySelector('#tourNext'); if (b) b.click(); },
+  skip: () => { const b = tourEl && tourEl.querySelector('#tourSkip'); if (b) b.click(); },
+  box: () => { if (!tourEl || tourEl.hidden) return null; const r = tourEl.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom }; },
+};
+window.__petBubbleText = () => (bubbleEl ? bubbleEl.textContent : '');
+window.__petReset = () => bridge.resetSettings();
 // The website puts her wallet field and her demo buttons on the page itself rather than making a
 // visitor hunt through her panel, so it needs to drive the relay and the panel from outside. The
 // desktop app never calls these; they exist so the web build needs no fork of the renderer.

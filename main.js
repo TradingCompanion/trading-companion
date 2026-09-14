@@ -62,8 +62,11 @@ try {
   if (typeof local.relayUrl === 'string') DEFAULT_RELAY_URL = local.relayUrl.trim();
   if (typeof local.relayToken === 'string') DEFAULT_RELAY_TOKEN = local.relayToken.trim();
 } catch {}
-let settings = {
+// Everything she remembers lives in one object, written to settings.json a moment after it changes
+// and read back on the next boot. "Reset everything" rebuilds it from here.
+function defaultSettings() { return {
   model: null, sizePx: 320, alwaysOnTop: true, x: null,
+  tourDone: false, userName: '',     // the first-run tour, and what she calls the user
   volume: 0.6, pitch: 1.0, muted: false,
   // Her figure. Mirrored by FIG in src/renderer.js — change both.
   bust: 0.36, jiggle: 1,             // bust size and how much it bounces (0..1)
@@ -75,7 +78,8 @@ let settings = {
   sign: true, signSize: 0.5, signStyle: 10, signHold: 'two', solPrice: 101.95, // the PnL sign she holds (10 = Aurora glass)
   wallets: '', relayUrl: '', relayToken: DEFAULT_RELAY_TOKEN, autoConnect: true,
   sounds: { ...DEFAULT_SOUNDS },
-};
+}; }
+let settings = defaultSettings();
 let ignoring = null; // unknown until setIgnore() has been applied once (a transparent window is NOT click-through by default)
 
 function loadSettings() {
@@ -287,6 +291,15 @@ ipcMain.on('model-failed', () => {
 ipcMain.on('log', (_e, m) => console.log('[pet]', m));
 ipcMain.on('request-model', () => sendModel(settings.model || DEFAULT_MODEL));
 ipcMain.on('quit', () => app.quit());
+// back to how she came: every setting, the name, the wallet; the bundled model; the tour again
+ipcMain.on('reset-settings', () => {
+  settings = defaultSettings();
+  settings.relayUrl = DEFAULT_RELAY_URL || PUBLIC_RELAY;
+  writeSettingsNow();
+  sendSettings();
+  if (tray) tray.setContextMenu(buildMenu());
+  sendModel(DEFAULT_MODEL);
+});
 
 if (process.platform === 'linux') app.commandLine.appendSwitch('enable-transparent-visuals');
 
@@ -297,7 +310,7 @@ app.whenReady().then(async () => {
   // Left alone, she points at the public relay. Anything typed into the panel, or a
   // relay.local.json, takes precedence and is never overwritten.
   if (!settings.relayUrl) settings.relayUrl = DEFAULT_RELAY_URL || PUBLIC_RELAY;
-  if (TEST) settings.x = null;
+  if (TEST) { settings.x = null; settings.tourDone = true; }   // the tour has its own section in the self-test
   if (process.env.PET_TEST_RELAY) {
     // PET_TEST_RELAY = ws://host:port|token|wallet  -> the self-test also drives a relay round-trip
     const [u, t, w] = process.env.PET_TEST_RELAY.split('|');
@@ -463,6 +476,58 @@ async function runSelfTest() {
     expect('grabbing her closes the panel', await js("document.getElementById('panel').hidden === true"));
     for (let i = 0; i < 8; i++) { await mouse('mouseMove', ip.screenX + i * 12, ip.screenY - ip.heightPx * 0.7); await adv(1 / 60); }
     await mouse('mouseUp', ip.screenX + 96, ip.screenY - ip.heightPx * 0.7); await adv(2.5);
+
+    // ---- the first-run tour -------------------------------------------------------------------
+    await js('window.__petPanel(false)'); await adv(0.3);
+    await js('window.__petTour.start()'); await adv(0.3);
+    const tourSt = () => js('window.__petTour.state()');
+    let ts = await tourSt();
+    expect('the tour opens on the name step', ts.active && ts.visible && ts.step === 'name');
+    const tcard = await js('window.__petTour.box()');
+    ip = await info();
+    expect('its card sits beside her, clear of her body', !!tcard && (tcard.left > ip.screenX + ip.heightPx * 0.18 || tcard.right < ip.screenX - ip.heightPx * 0.18));
+    await js("window.__petTour.name('Alex')"); await adv(0.3);
+    ts = await tourSt();
+    expect('giving a name moves to the click step', ts.step === 'click' && settings.userName === 'Alex');
+    expect('she uses the name straight away', /Alex/.test(await js('window.__petBubbleText()')));
+    await sleep(500); await shot('26-tour.png');
+    await clickHer(); await adv(0.6);
+    ts = await tourSt();
+    expect('clicking her completes the click step', ts.step === 'throw');
+    await js('window.__petPanel(false)');
+    // a throw: press, move, release while moving
+    ip = await info();
+    await mouse('mouseMove', ip.screenX, ip.screenY - ip.heightPx * 0.7); await adv(0.05);
+    await mouse('mouseDown', ip.screenX, ip.screenY - ip.heightPx * 0.7); await adv(0.1);
+    for (let i = 1; i <= 10; i++) { await mouse('mouseMove', ip.screenX + i * 14, ip.screenY - ip.heightPx * 0.7 - i * 6); await adv(1 / 60); }
+    await mouse('mouseUp', ip.screenX + 140, ip.screenY - ip.heightPx * 0.7 - 60); await adv(0.8);
+    ts = await tourSt();
+    expect('throwing her completes the throw step', ts.step === 'look');
+    expect('the look step opens the Look tab and points at it', await js("!document.getElementById('panel').hidden && !!document.querySelector('#panel .tabs button.tour-hi[data-tab=look]')"));
+    await adv(2.5);
+    await js('window.__petTour.next()'); await adv(0.3);
+    ts = await tourSt();
+    expect('next moves to the wallet step', ts.step === 'wallet');
+    await js('window.__petTour.skip()'); await adv(0.3);
+    ts = await tourSt();
+    expect('skipping the wallet reaches the end', ts.step === 'done');
+    await js('window.__petTour.next()'); await adv(0.3);
+    ts = await tourSt();
+    expect('the tour closes and is remembered', !ts.active && !ts.visible && settings.tourDone === true && settings.userName === 'Alex');
+    await js("window.__petReact({ side: 'sell', symbol: 'PEPE', quote: 'SOL', amount: 1.42, pnl: 0.61, pnlPct: 75 })"); await adv(0.4);
+    expect('she calls the user by name on a win', /Alex/.test(await js('window.__petBubbleText()')));
+    await adv(3);
+    // reset: everything back to defaults, the tour again
+    await js('window.__petReset()');
+    await sleep(3000); await adv(0.5);   // the reset reloads the bundled model and restarts the tour on real-time timers
+    ts = await tourSt();
+    expect('reset clears the name and settings', settings.userName === '' && settings.tourDone === false && settings.bust === defaultSettings().bust);
+    expect('and starts the tour over', ts.active && ts.step === 'name');
+    await js("window.__petTour.name('Alex')"); await adv(0.2);   // leave the name in place for the rest of the run
+    await js('window.__petTour.skip(); window.__petTour.skip(); window.__petTour.next(); window.__petTour.skip(); window.__petTour.next()'); await adv(0.3);
+    ts = await tourSt();
+    expect('the tour can be stepped through by button', !ts.active);
+    await js('window.__petPanel(false)'); await adv(0.3);
 
     // ---- settings panel + trade reactions with speech bubble
     await js('window.__petPanel(true)'); await adv(0.3);

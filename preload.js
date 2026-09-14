@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('pet', {
   pickModel: () => ipcRenderer.send('pick-model'),
   defaultModel: () => ipcRenderer.send('default-model'),
   quit: () => ipcRenderer.send('quit'),
+  resetSettings: () => ipcRenderer.send('reset-settings'),
   openSoundsFolder: () => ipcRenderer.send('open-sounds-folder'),
   rescanSounds: () => ipcRenderer.send('rescan-sounds'),
 });
