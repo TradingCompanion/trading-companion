@@ -32,9 +32,12 @@ function loadEnv(file) {
   } catch {}
   return out;
 }
-const HARVESTER_DIR = process.env.HARVESTER_DIR || path.resolve(__dirname, '../../pump-harvester');
-const henv = loadEnv(path.join(HARVESTER_DIR, '.env'));
+// server/.env is read first so it can say where the harvester lives: the default only holds when this
+// checkout sits beside pump-harvester, and a relay that cannot find it silently loses its cost basis.
 const senv = loadEnv(path.join(__dirname, '.env'));
+const HARVESTER_DIR = process.env.HARVESTER_DIR || senv.HARVESTER_DIR || path.resolve(__dirname, '../../pump-harvester');
+const henv = loadEnv(path.join(HARVESTER_DIR, '.env'));
+if (!henv.DB_PASSWORD && !henv.PGPASSWORD && !process.env.PGPASSWORD) console.error('[seed] no DB credentials at ' + HARVESTER_DIR + '/.env — set HARVESTER_DIR in server/.env; trades will relay, positions will not seed');
 
 const PORT = Number(senv.PET_RELAY_PORT || process.env.PET_RELAY_PORT || 9998);
 const HOST = senv.PET_RELAY_HOST || process.env.PET_RELAY_HOST || '0.0.0.0';
