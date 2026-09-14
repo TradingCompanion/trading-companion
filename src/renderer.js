@@ -2748,8 +2748,9 @@ function applyFigureTextures() {
       f.m.needsUpdate = true;
     }
   }
-  woundTexKey = '';   // the skin was rebuilt from scratch: her wounds have to go back on
+  woundTexKey = '';   // the skin was rebuilt from scratch: her wounds have to go back on (woundSheet sees the new base)
   syncOutlines();
+  scheduleWoundPrebuild();
 }
 
 // ---------------------------------------------------------------- trade effects
@@ -2906,7 +2907,8 @@ function updateFx(dt) {
   // wounds vanish one by one as she heals (the worst ones first)
   pet.wounds = pet.wounds.filter((w) => pet.hurt > w.def.thr * 0.45);
   const wk = woundKeyNow();
-  if (wk !== woundTexKey && model.figure) { woundTexKey = wk; paintWounds(); }
+  if (wk !== woundTexKey && model.figure) { woundTexKey = wk; const t0 = performance.now(), builtBefore = paintMs.builds; paintWounds(); paintMs.last = performance.now() - t0; paintMs.n++; if (paintMs.builds > builtBefore) paintMs.buildMs = Math.max(paintMs.buildMs, paintMs.last); else paintMs.max = Math.max(paintMs.max, paintMs.last); }
+  flushWoundQueue();
   for (const s of sparks) { s.life += dt; s.x += s.vx * dt; s.y += s.vy * dt; s.vy *= 1 - 0.6 * dt; }
   for (let i = sparks.length - 1; i >= 0; i--) if (sparks[i].life >= sparks[i].dur) sparks.splice(i, 1);
 
@@ -2986,25 +2988,29 @@ function bloodStreak(g, x, y, len, w0, wob, fill) {
 // little to her right and downwards give how texture space stretches there, so the same drawing
 // code runs under a canvas transform instead of being re-authored for every model's UV layout.
 let woundTexKey = '';
+const paintMs = { last: 0, max: 0, n: 0, draw: 0, upload: 0, regions: 0, px: 0, sheets: 0, builds: 0, buildMs: 0, readMax: 0, glMax: 0, glMaxAt: '', flushes: 0, anchorMax: 0 };   // how long the last / worst wound repaint took on the main thread
 const _ray = new THREE.Raycaster(), _rayO = new THREE.Vector3(), _rayD = new THREE.Vector3(0, 0, -1);
 const _wa = new THREE.Vector3(), _wb = new THREE.Vector3();
 function skinRecord(mat) {
   for (const k of ['face', 'skin']) for (const f of (model.figure[k] || { list: [] }).list) if (f.m === mat) return f;
   return null;
 }
-function skinMeshes() {
+// the meshes carrying each skin sheet. A ray only needs the mesh a wound can land on: raycasting a
+// skinned mesh re-skins every vertex it holds, so asking the whole body about a cheek costs ~50 ms
+function skinMeshes(kind) {
   const out = [];
   model.vrm.scene.traverse((o) => {
     if (!o.isMesh && !o.isSkinnedMesh) return;
-    if ((Array.isArray(o.material) ? o.material : [o.material]).some((m) => skinRecord(m))) out.push(o);
+    if ((Array.isArray(o.material) ? o.material : [o.material]).some((m) => (model.figure[kind] || { list: [] }).list.some((f) => f.m === m))) out.push(o);
   });
   return out;
 }
 // the skin under a point, seen from the front: which texture, and where on it (null if only hair or clothes are there)
-function skinUnder(x, y) {
-  model.skinMeshes ||= skinMeshes();
+function skinUnder(x, y, kind) {
+  model.skinMeshes ||= {};
+  const meshes = model.skinMeshes[kind] ||= skinMeshes(kind);
   _ray.set(_rayO.set(x, y, model.root.position.z + 4), _rayD);
-  for (const hit of _ray.intersectObjects(model.skinMeshes, false)) {
+  for (const hit of _ray.intersectObjects(meshes, false)) {
     if (!hit.uv || !hit.face) continue;
     const mats = Array.isArray(hit.object.material) ? hit.object.material : [hit.object.material];
     const f = skinRecord(mats[hit.face.materialIndex] || mats[0]);
@@ -3036,10 +3042,11 @@ function woundAnchor(w) {
     const fx = _wa.x + ux * R * 0.42, fy = _wa.y + uy * R * 0.42;
     px = fx + rx * d.dx * R + ux * d.dy * R; py = fy + ry * d.dx * R + uy * d.dy * R;
   }
-  const h0 = skinUnder(px, py);
-  if (!h0) { bridge.log(`wound ${d.type}: no skin under (${px.toFixed(3)}, ${py.toFixed(3)}); ${model.skinMeshes.length} skin meshes, ${_ray.intersectObjects(model.skinMeshes, false).length} hits`); return (w.anchor = null); }
+  const kind = d.bone ? 'skin' : 'face';
+  const h0 = skinUnder(px, py, kind);
+  if (!h0) { bridge.log(`wound ${d.type}: no ${kind} skin under (${px.toFixed(3)}, ${py.toFixed(3)})`); return (w.anchor = null); }
   const eps = 0.3 * R;
-  const hr = skinUnder(px + rx * eps, py + ry * eps), hd = skinUnder(px + dx * eps, py + dy * eps);
+  const hr = skinUnder(px + rx * eps, py + ry * eps, kind), hd = skinUnder(px + dx * eps, py + dy * eps, kind);
   let dr = hr && hr.f === h0.f ? [(hr.u - h0.u) / eps, (hr.v - h0.v) / eps] : null;
   let dd = hd && hd.f === h0.f ? [(hd.u - h0.u) / eps, (hd.v - h0.v) / eps] : null;
   if (!dr && !dd) { bridge.log(`wound ${d.type}: skin found but no texture gradient`); return (w.anchor = null); }
@@ -3061,29 +3068,180 @@ function woundKeyNow() {
     return w.def.type + w.def.thr + ':' + stage + (w.anchor === undefined ? '?' : '');
   }).join(',');
 }
+// Painting used to mean copying each 2048² sheet, making four new GPU textures, uploading ~40 MB
+// and rebuilding every outline material — on the main thread, again every half-second while a
+// wound was fresh. Spam a loss and she stalled. Now each sheet keeps ONE persistent canvas and
+// texture, built once shortly after the model loads. A repaint redraws only the patch under each
+// wound (base pixels back, then the wounds that touch it) and queues that patch; a couple of
+// patches go up per frame with texSubImage2D, and a sheet's mips are rebuilt once when its queue
+// drains. Nothing is allocated per repaint, no material is rebuilt, no frame pays for all of it.
+// how far each wound can draw from its anchor, in face radii: the patch is sized to the wound, not to a worst case
+const WOUND_REACH = { bruise: 0.46, bandaid: 0.42, trickle: 0.72, cut: 0.48, lip: 0.1, scrape: 0.55 };
+const PATCHES_PER_FRAME = 1;
+// Patches are uploaded per mip level rather than regenerating a sheet's whole chain (which stalls
+// ~40 ms on a 2048² texture). Regions are aligned to 2^MIP_LEVELS texels so every level's patch
+// lands exactly; the levels below that see a few-hundred-pixel change as nothing.
+const MIP_LEVELS = 5;
+// 2x2 box filter, one mip level down. A few hundred pixels: cheaper in JS than a canvas round-trip.
+function halve(src, w, h) {
+  const w2 = w >> 1, h2 = h >> 1, out = new Uint8ClampedArray(w2 * h2 * 4);
+  for (let y = 0; y < h2; y++) {
+    const r0 = (y * 2) * w * 4, r1 = r0 + w * 4;
+    for (let x = 0; x < w2; x++) {
+      const i0 = r0 + x * 8, i1 = r1 + x * 8, o = (y * w2 + x) * 4;
+      for (let c = 0; c < 4; c++) out[o + c] = (src[i0 + c] + src[i0 + 4 + c] + src[i1 + c] + src[i1 + 4 + c] + 2) >> 2;
+    }
+  }
+  return out;
+}
+// One patch of one mip level, straight to the GPU. three's copyTextureToTexture would issue the
+// same texSubImage2D but reads five GL parameters back first, each a synchronous round-trip to the
+// GPU process — that, not the pixels, was the stall. The texture is bound through three's own
+// state cache so nothing it believes about bindings goes stale.
+function uploadPatch(tex, level, x, y, w, h, data) {
+  const p = renderer.properties.get(tex);
+  if (!p || !p.__webglTexture) return false;
+  const gl = renderer.getContext();
+  renderer.state.bindTexture(gl.TEXTURE_2D, p.__webglTexture);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, tex.flipY);
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, tex.premultiplyAlpha);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  gl.texSubImage2D(gl.TEXTURE_2D, level, x, y, w, h, gl.RGBA, gl.UNSIGNED_BYTE, data);
+  return true;
+}
+const woundQueue = [];   // [{ s, r }] patches drawn but not yet on the GPU
+function woundSheet(f, src, key) {
+  let s = f[key];
+  if (s && s.base === src) return s;
+  if (s) { s.dead = true; s.tex.dispose(); }
+  const img = src.image;
+  const cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height;
+  const g = cv.getContext('2d', { willReadFrequently: true });   // CPU-backed: reading a patch back out is then just a memcpy
+  g.drawImage(img, 0, 0);
+  const tex = makeTexture(src, cv);            // the one full upload, when the base sheet itself changes
+  tex.generateMipmaps = false;                 // mips are rebuilt by remip(), once per drained queue
+  renderer.initTexture(tex); remip(tex);       // upload now, so the first wound is only ever a patch
+  paintMs.builds++;
+  s = f[key] = { base: src, cv, g, tex, painted: [], pending: 0, dead: false };
+  return s;
+}
+// She is small on screen, so her skin is sampled from the smaller mip levels: a patch that only
+// touched level 0 would leave the wound invisible. One rebuild per sheet per drained queue.
+function remip(tex) {
+  const p = renderer.properties.get(tex);
+  if (!p || !p.__webglTexture) return;
+  const gl = renderer.getContext();
+  renderer.state.bindTexture(gl.TEXTURE_2D, p.__webglTexture);
+  gl.generateMipmap(gl.TEXTURE_2D);
+}
+// the rectangle of texture pixels a wound can touch, clamped to the sheet
+function woundRegion(w, src, W, H) {
+  const A = w.anchor;
+  const flip = src.flipY ? -1 : 1, cy = src.flipY ? (1 - A.v) * H : A.v * H, cx = A.u * W;
+  const a11 = A.dr[0] * A.R * W, a21 = A.dr[1] * A.R * H * flip, a12 = A.dd[0] * A.R * W, a22 = A.dd[1] * A.R * H * flip;
+  const reach = WOUND_REACH[w.def.type] || 0.6;
+  const hx = Math.ceil(reach * (Math.abs(a11) + Math.abs(a12))) + 2, hy = Math.ceil(reach * (Math.abs(a21) + Math.abs(a22))) + 2;
+  const G = 1 << MIP_LEVELS;
+  const x0 = Math.max(0, Math.floor((cx - hx) / G) * G), y0 = Math.max(0, Math.floor((cy - hy) / G) * G);
+  const x1 = Math.min(W, Math.ceil((cx + hx) / G) * G), y1 = Math.min(H, Math.ceil((cy + hy) / G) * G);
+  return x1 > x0 && y1 > y0 ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : null;
+}
+const sameRegion = (a, b) => a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h;
+function repaintSheet(s, src, list) {
+  const W = s.cv.width, H = s.cv.height;
+  const regions = list.map((w) => woundRegion(w, src, W, H)).filter(Boolean);
+  // regions painted last time and not any more (a wound that healed) go back to bare skin too
+  for (const r of s.painted) if (!regions.some((q) => sameRegion(q, r))) regions.push(r);
+  const g = s.g; paintMs.sheets++;
+  for (const r of regions) {
+    const tD = performance.now(); paintMs.regions++; paintMs.px += r.w * r.h;
+    g.save();
+    g.beginPath(); g.rect(r.x, r.y, r.w, r.h); g.clip();
+    g.clearRect(r.x, r.y, r.w, r.h);
+    g.drawImage(src.image, r.x, r.y, r.w, r.h, r.x, r.y, r.w, r.h);
+    for (const w of list) drawWoundInto(g, w, src, W, H);
+    g.restore();
+    paintMs.draw += performance.now() - tD;
+    // a patch already waiting for the same rectangle will pick up these pixels when it goes
+    if (!woundQueue.some((q) => q.s === s && sameRegion(q.r, r))) { woundQueue.push({ s, r }); s.pending++; }
+  }
+  s.painted = list.map((w) => woundRegion(w, src, W, H)).filter(Boolean);
+}
+// a couple of patches per frame, then the mips once a sheet has nothing left waiting
+function flushWoundQueue() {
+  if (!woundQueue.length) return;
+  const t0 = performance.now();
+  for (let i = 0; i < PATCHES_PER_FRAME && woundQueue.length; i++) {
+    const { s, r } = woundQueue.shift();
+    s.pending--;
+    if (s.dead) continue;
+    const H = s.cv.height;
+    try {
+      const tR = performance.now();
+      let data = s.g.getImageData(r.x, r.y, r.w, r.h).data, w = r.w, h = r.h;
+      paintMs.readMax = Math.max(paintMs.readMax, performance.now() - tR);
+      for (let L = 0; L <= MIP_LEVELS; L++) {
+        const tG = performance.now();
+        const y = s.tex.flipY ? (H >> L) - (r.y >> L) - h : r.y >> L;   // GL rows run from the bottom when the sheet was flipped on upload
+        if (!uploadPatch(s.tex, L, r.x >> L, y, w, h, data)) throw new Error('sheet texture is not on the GPU yet');
+        const g = performance.now() - tG; if (g > paintMs.glMax) { paintMs.glMax = g; paintMs.glMaxAt = 'L' + L + ' ' + w + 'x' + h + ' sheet ' + s.cv.width; }
+        if ((w >> 1) < 1 || (h >> 1) < 1) break;
+        data = halve(data, w, h); w >>= 1; h >>= 1;
+      }
+    } catch (e) { bridge.log('wound patch upload: ' + e.message); s.tex.needsUpdate = true; remip(s.tex); }   // fall back to a full upload
+  }
+  const ms = performance.now() - t0; paintMs.flushes++;
+  paintMs.upload += ms; paintMs.max = Math.max(paintMs.max, ms);
+}
+// The sheets are built a moment after the skin textures are ready — not on the first loss, when
+// the one full upload each needs would land in the middle of her reaction.
+let woundPrebuildTimer = null;
+function scheduleWoundPrebuild() {
+  clearTimeout(woundPrebuildTimer);
+  woundPrebuildTimer = setTimeout(() => { if (model && model.figure) prebuildWoundSheets(); }, 700);
+}
+function prebuildWoundSheets() {
+  const F = model.figure;
+  let mapsChanged = false;
+  for (const k of ['face', 'skin']) for (const f of (F[k] || { list: [] }).list) {
+    const base = f.baseMap || f.map, baseShade = f.baseShade || f.shade;
+    const lit = woundSheet(f, base, 'litSheet');
+    if (f.m.map !== lit.tex) { f.m.map = lit.tex; mapsChanged = true; }
+    f.woundCanvas = lit.cv;   // the self-test saves the painted sheet and looks at it
+    if (baseShade) {
+      const sh = woundSheet(f, baseShade, 'shadeSheet');
+      if (f.m.shadeMultiplyTexture !== sh.tex) { f.m.shadeMultiplyTexture = sh.tex; mapsChanged = true; }
+    }
+  }
+  // only when a material was pointed at a new texture object — never for a repaint of pixels
+  if (mapsChanged) syncOutlines();
+}
 function paintWounds() {
   const F = model.figure;
   const byTex = new Map();
-  if (pet.hurt > 0) for (const w of pet.wounds) { const a = woundAnchor(w); if (a) { if (!byTex.has(a.f)) byTex.set(a.f, []); byTex.get(a.f).push(w); } }
-  for (const k of ['face', 'skin']) for (const f of (F[k] || { list: [] }).list) {
-    for (const t of f.woundTex || []) t.dispose();
-    f.woundTex = [];
-    const base = f.baseMap || f.map, baseShade = f.baseShade || f.shade;
-    const list = byTex.get(f);
-    if (!list) { f.m.map = base; if (baseShade) f.m.shadeMultiplyTexture = baseShade; f.m.needsUpdate = true; continue; }
-    const paint = (src) => {
-      const img = src.image, cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height;
-      const g = cv.getContext('2d');
-      g.drawImage(img, 0, 0);
-      for (const w of list) drawWoundInto(g, w, src, cv.width, cv.height);
-      if (src === base) f.woundCanvas = cv;   // kept so the self-test can save the painted sheet and look at it
-      const t = makeTexture(src, cv); f.woundTex.push(t); return t;
-    };
-    f.m.map = paint(base);
-    if (baseShade) f.m.shadeMultiplyTexture = paint(baseShade);
-    f.m.needsUpdate = true;
+  let anchored = 0;
+  if (pet.hurt > 0) for (const w of pet.wounds) {
+    let a = w.anchor;
+    if (a === undefined) { if (anchored++) continue; const t0 = performance.now(); a = woundAnchor(w); paintMs.anchorMax = Math.max(paintMs.anchorMax, performance.now() - t0); }
+    if (a) { if (!byTex.has(a.f)) byTex.set(a.f, []); byTex.get(a.f).push(w); }
   }
-  syncOutlines();
+  let mapsChanged = false;
+  for (const k of ['face', 'skin']) for (const f of (F[k] || { list: [] }).list) {
+    const list = byTex.get(f) || [];
+    const base = f.baseMap || f.map, baseShade = f.baseShade || f.shade;
+    // a sheet that has never had a wound and has none now needs nothing at all
+    if (!list.length && !(f.litSheet && f.litSheet.painted.length)) continue;
+    const lit = woundSheet(f, base, 'litSheet');
+    repaintSheet(lit, base, list);
+    if (f.m.map !== lit.tex) { f.m.map = lit.tex; mapsChanged = true; }
+    f.woundCanvas = lit.cv;
+    if (baseShade) {
+      const sh = woundSheet(f, baseShade, 'shadeSheet');
+      repaintSheet(sh, baseShade, list);
+      if (f.m.shadeMultiplyTexture !== sh.tex) { f.m.shadeMultiplyTexture = sh.tex; mapsChanged = true; }
+    }
+  }
+  if (mapsChanged) syncOutlines();
 }
 // One wound onto one texture. The canvas is transformed so that the wound's own anchor is the
 // origin, x runs to her right and y down her face, in units of the face radius; the drawing itself
@@ -3354,6 +3512,7 @@ window.__petModel = () => model;
 window.__petPanel = (open) => (open === undefined ? togglePanel() : open ? openPanel() : closePanel());
 window.__petToScreenV = (v) => projFx(v);
 window.__petBonePx = (n) => bonePx(n);
+window.__petPaintMs = () => ({ ...paintMs });
 window.__petWoundSheets = () => { const o = {}; for (const k of ['face', 'skin']) for (const f of (model && model.figure && model.figure[k] ? model.figure[k].list : [])) if (f.woundCanvas) o[k] = f.woundCanvas.toDataURL('image/png'); return o; };
 window.__petWounds = () => pet.wounds.map((w) => ({ type: w.def.type, anchor: w.anchor === undefined ? 'pending' : w.anchor && { u: +w.anchor.u.toFixed(3), v: +w.anchor.v.toFixed(3), dr: w.anchor.dr.map((x) => +x.toFixed(2)), dd: w.anchor.dd.map((x) => +x.toFixed(2)) } }));
 window.__petSay = say;

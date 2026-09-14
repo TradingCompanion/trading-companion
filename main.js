@@ -494,6 +494,9 @@ async function runSelfTest() {
     const ib = await shot('16b-bruised.png');
     expect('stacked losses -> fully bruised', ib.state === 'idle' && await js('window.__pet.hurt > 0.9 && window.__pet.wounds.length >= 8'));
     console.log('[test] wound anchors:', JSON.stringify(await js('window.__petWounds()')));
+    const pm = await js('window.__petPaintMs()');
+    console.log('[test] wound repaints:', JSON.stringify(pm));
+    expect('painting a wound never stalls a frame (after the sheet is first built)', pm.n > 0 && pm.max < 30);
     // the painted skin sheets themselves, so a wound that lands in the wrong place can be seen
     const sheets = await js('window.__petWoundSheets()');
     for (const k in sheets) fs.writeFileSync(path.join(outDir, `26-skin-${k}.png`), Buffer.from(sheets[k].split(',')[1], 'base64'));
