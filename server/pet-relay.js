@@ -156,6 +156,8 @@ function book(wallet) {
   return b;
 }
 
+const DUST_FRACTION = 0.03;   // of the tokens held before the sell
+const DUST_SOL = 0.0005;       // about five cents
 // apply one fill to the running cost basis; returns realised pnl info for sells
 function applyFill(wallet, mint, side, amount, tokens, quote) {
   const b = book(wallet);
@@ -170,11 +172,18 @@ function applyFill(wallet, mint, side, amount, tokens, quote) {
     return { pnl: null, pnlPct: null, cost: null, remainingTokens: 0, remainingCost: 0 };
   }
   const avg = p.cost / p.tokens;
+  const before = p.tokens;
   const sold = Math.min(tokens, p.tokens);
-  const cost = avg * sold;
-  const pnl = amount * (sold / tokens) - cost; // pro-rate proceeds to the part we have a basis for (history gaps)
+  let cost = avg * sold;
+  let pnl = amount * (sold / tokens) - cost; // pro-rate proceeds to the part we have a basis for (history gaps)
   p.tokens -= sold; p.cost -= cost;
-  if (p.tokens < 1e-6) { p.tokens = 0; p.cost = 0; }
+  // A "sell everything" rarely clears the book to the token: LaunchLab and stonkfun take their fee
+  // out of the trader's side, so the sell event carries ~1-2% fewer tokens than the buy did, and a
+  // sliver stays behind forever with the board still up for it. A remainder that is a few percent
+  // of what was held, or worth less than a cent, is dust: the position is closed and the dust's
+  // cost goes into this sale's realised result, which is what the trader actually experienced.
+  const dust = p.tokens > 0 && (p.tokens <= before * DUST_FRACTION || p.tokens * avg < DUST_SOL);
+  if (dust || p.tokens < 1e-6) { pnl -= p.cost; cost += p.cost; p.tokens = 0; p.cost = 0; }
   return { pnl, pnlPct: cost > 0 ? (pnl / cost) * 100 : null, cost, remainingTokens: p.tokens, remainingCost: p.cost };
 }
 

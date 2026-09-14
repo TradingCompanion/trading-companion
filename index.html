@@ -17,23 +17,40 @@
   }
   #loading[hidden] { display: none; }
 
-  /* speech bubble */
+  /* speech bubble — the panel's glass, in miniature: a gradient hairline, an aurora bloom in the
+     corner that turns mint on a win and rose on a loss, and a pop from the tail when she speaks */
   #bubble {
-    position: absolute; left: 0; top: 0; max-width: 260px;
-    transform: translate(-50%, -100%);
-    background: #fff; color: #222; border: 2px solid #f6a5c6; border-radius: 16px;
-    padding: 8px 12px; font: 14px/1.35 "Segoe UI", system-ui, sans-serif;
-    box-shadow: 0 4px 16px rgba(0,0,0,.18); pointer-events: none; white-space: pre-line;
-    opacity: 0; transition: opacity .18s ease, transform .18s ease;
+    --b1: #ff6fae; --b2: #7c5cff; --bloom1: rgba(255,111,174,.42); --bloom2: rgba(124,92,255,.38);
+    position: absolute; left: 0; top: 0; max-width: 250px;
+    transform: translate(-50%, -100%); transform-origin: 50% 100%;
+    padding: 9px 14px 10px; border-radius: 18px; border: 1px solid transparent;
+    background:
+      radial-gradient(110px 70px at 88% -10%, var(--bloom1), transparent 72%) padding-box,
+      radial-gradient(90px 60px at 104% 60%, var(--bloom2), transparent 72%) padding-box,
+      linear-gradient(rgba(13,11,18,.96), rgba(13,11,18,.96)) padding-box,
+      linear-gradient(135deg, var(--b1), var(--b2)) border-box;
+    color: #f1eef8; font: 500 13.5px/1.4 "Rubik", "Segoe UI", system-ui, sans-serif; letter-spacing: .005em;
+    box-shadow: 0 12px 30px rgba(0,0,0,.45), 0 0 26px rgba(255,111,174,.16), inset 0 1px 0 rgba(255,255,255,.08);
+    backdrop-filter: blur(14px) saturate(1.3);   /* the panel's glass; also what makes a translucent fill survive the transparent window */
+    pointer-events: none; white-space: pre-line; text-wrap: balance;
+    opacity: 0; scale: .8; transition: opacity .16s ease, scale .16s ease;
   }
-  #bubble.show { opacity: 1; }
-  #bubble::after {
-    content: ""; position: absolute; left: 50%; bottom: -10px; margin-left: -8px;
-    border: 8px solid transparent; border-top-color: #f6a5c6; border-bottom: 0;
+  #bubble.show { opacity: 1; scale: 1; animation: bubble-pop .42s cubic-bezier(.3,1.5,.4,1); }
+  @keyframes bubble-pop { from { scale: .72; opacity: 0; } 60% { scale: 1.04; opacity: 1; } to { scale: 1; } }
+  #bubble.good { --bloom1: rgba(63,224,165,.45); --bloom2: rgba(52,213,201,.35); --b1: #3fe0a5; --b2: #7c5cff; }
+  #bubble.bad  { --bloom1: rgba(255,92,138,.5);  --bloom2: rgba(124,92,255,.3);  --b1: #ff5c8a; --b2: #a56ff2; }
+  /* the tail: a pink-violet rim drawn one pixel larger behind a dark fill */
+  #bubble::before, #bubble::after {
+    content: ""; position: absolute; left: 50%; border: 8px solid transparent; border-bottom: 0;
   }
+  #bubble::before { bottom: -10px; margin-left: -9px; border-width: 9px 9px 0; border-top-color: var(--b1); }
+  #bubble::after  { bottom: -8px;  margin-left: -8px; border-top-color: #100d16; }
   /* when she hangs head-down the bubble sits under her head, so the tail points up */
-  #bubble.below { transform: translate(-50%, 0); }
-  #bubble.below::after { bottom: auto; top: -10px; border-top: 0; border-bottom: 8px solid #f6a5c6; }
+  #bubble.below { transform: translate(-50%, 0); transform-origin: 50% 0; }
+  #bubble.below::before, #bubble.below::after { bottom: auto; border-top: 0; border-bottom: 8px solid transparent; }
+  #bubble.below::before { top: -10px; border-width: 0 9px 9px; border-bottom-color: var(--b1); }
+  #bubble.below::after  { top: -8px;  border-bottom-color: #100d16; }
+  @media (prefers-reduced-motion: reduce) { #bubble.show { animation: none; } }
 
 
   /* Her panel's typefaces, bundled so they are there offline (both OFL; Rubik and Outfit are variable fonts) */

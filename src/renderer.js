@@ -347,11 +347,16 @@ window.__petOutline = (scale) => {
 const bubbleEl = document.getElementById('bubble');
 let bubbleUntil = -1;
 let bubbleW = 200, bubbleH = 40;   // measured once per message, not per frame (that forces a reflow)
-function say(text, secs) {
+// `tone` colours the bubble's bloom: 1 for good news (a win), -1 for bad (a loss), 0 for anything else.
+function say(text, secs, tone = 0) {
   // Nothing to speak from until she is on screen: shown now, the bubble would sit at the window's
   // top-left corner until the next frame found a head to hang it on.
   if (!bubbleEl || !model) return;
   bubbleEl.textContent = text;
+  bubbleEl.classList.toggle('good', tone > 0);
+  bubbleEl.classList.toggle('bad', tone < 0);
+  // re-trigger the pop when she speaks again while a bubble is already up
+  bubbleEl.classList.remove('show'); void bubbleEl.offsetWidth;
   bubbleEl.classList.add('show');
   bubbleW = bubbleEl.offsetWidth || bubbleW; bubbleH = bubbleEl.offsetHeight || bubbleH;
   bubbleUntil = T + (secs ?? Math.min(9, 2.2 + text.length * 0.07));
@@ -580,7 +585,10 @@ function trackTrade(m) {
   } else if (prev && prev.tokens > 0) {
     invSum *= clamp((m.remainingTokens ?? 0) / prev.tokens, 0, 1); // sell the same fraction of the basis
   }
-  const o = { tokens: m.remainingTokens ?? 0, cost: m.remainingCost ?? 0, quote: m.quote, quoteKind: m.quoteKind, venue: m.venue, symbol: m.symbol, at: T, live: true, invSum };
+  let remaining = m.remainingTokens ?? 0;
+  // a sell that leaves a sliver (a venue's fee taken from the token side) is a full exit
+  if (m.side === 'sell' && prev && prev.tokens > 0 && remaining > 0 && remaining <= prev.tokens * 0.03) remaining = 0;
+  const o = { tokens: remaining, cost: remaining > 0 ? (m.remainingCost ?? 0) : 0, quote: m.quote, quoteKind: m.quoteKind, venue: m.venue, symbol: m.symbol, at: T, live: true, invSum };
   if (m.mcUsd > 0) o.mcUsd = m.mcUsd;
   if (o.tokens > 0) liveMints.add(m.mint); else liveMints.delete(m.mint);
   if (mc > 0) o.mc = mc;
@@ -605,13 +613,13 @@ function reactToTrade(t) {
   if (pnl >= thr) {
     const big = (t.quote === 'USDC' ? pnl >= 150 : pnl >= 1) || pct >= 100;
     sound(big ? 'bigProfit' : 'profit', { cooldown: 1.2 });
-    say(pick(big ? LINES.bigProfit : LINES.profit)(sym, '+' + money(pnl), pct));
+    say(pick(big ? LINES.bigProfit : LINES.profit)(sym, '+' + money(pnl), pct), undefined, 1);
     if (!busy) { pet.happy = 1; setState('cheer'); }
     addGlow(big ? 1 : 0.7); healHurt(big ? 0.6 : 0.35);
   } else if (pnl <= -thr) {
     const big = (t.quote === 'USDC' ? pnl <= -150 : pnl <= -1) || pct <= -50;
     sound(big ? 'bigLoss' : 'loss', { cooldown: 1.2 });
-    say(pick(big ? LINES.bigLoss : LINES.loss)(sym, '−' + money(pnl), pct));
+    say(pick(big ? LINES.bigLoss : LINES.loss)(sym, '−' + money(pnl), pct), undefined, -1);
     if (!busy) setState('comfort');
     addHurt(big ? 0.75 : 0.45);
   } else {

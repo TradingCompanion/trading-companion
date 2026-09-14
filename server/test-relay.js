@@ -114,11 +114,21 @@ function client(wallets, opts = {}) {
   emit(trade(W1, MINT, 'sell', { pool: 'pump-amm' }));
   await sleep(500);
   expect('a PumpSwap fill is labelled as such', a.got.trades.length === 4 && a.got.trades[3].venue === 'pump.swap');
+  // a sell that carries 98% of the tokens bought (the venue's fee came out of the token side) closes the position
+  const MINT3 = '3K9CjLRHL7V8y3yT5fCGrMpFVdpnCkJ7MpB8C5yUz4Gx';
+  emit(trade(W1, MINT3, 'buy', { tokenAmount: 1000, quoteAmount: 0.01 }));
+  await sleep(400);
+  emit(trade(W1, MINT3, 'sell', { tokenAmount: 980, quoteAmount: 0.0096 }));
+  await sleep(600);
+  const dustSell = a.got.trades.find((t) => t.mint === MINT3 && t.side === 'sell');
+  expect('a sell leaving fee dust is relayed', !!dustSell);
+  // with the seed failed the relay never builds a book, so the position figures are null; the rule is covered by the unit check below
+  expect('and is not reported as still holding', !dustSell || !(dustSell.remainingTokens > 0));
   // a quote nobody has priced: the book cannot take it, and the health page says so
   emit(trade(W1, MINT2, 'buy', { quoteMint: 'QUBTAD8C9bMU9LvmMNgKPhrmBGbHvxpu6vfWQtThxxw', quoteAmount: 3, pool: 'raydium-launchpad' }));
   await sleep(500);
   const hq = await health();
-  expect('a fill in an unpriced quote is skipped, not mangled', a.got.trades.length === 4 && hq.unpricedQuotes === 1);
+  expect('a fill in an unpriced quote is skipped, not mangled', a.got.trades.length === 6 && hq.unpricedQuotes === 1);
 
   // ---- limits ----------------------------------------------------------------------------------
   const b = client(W2);
@@ -151,7 +161,7 @@ function client(wallets, opts = {}) {
   emit(trade(W1, MINT));
   await sleep(700);
   expect('every session watching a wallet gets its trade',
-    a.got.trades.length === 5 && authed.got.trades.length === 1);
+    a.got.trades.length === 7 && authed.got.trades.length === 1);
 
   for (const cl of [a, many, authed]) cl.ws.close();
   await sleep(500);
