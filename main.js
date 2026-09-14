@@ -97,6 +97,13 @@ function loadSettings() {
     if (!saved.signLookV2) { saved.signSize = 0.5; saved.signStyle = 1; saved.signHold = 'two'; saved.signLookV2 = true; }
     // the board now matches her panel (Aurora glass); move existing settings over once
     if (!saved.signLookV3) { saved.signStyle = 10; saved.signLookV3 = true; }
+    // her look was settled on 2026-09-14 (the figure, black hair, white eyes, Huge). A settings file
+    // from an earlier build carries the model-as-authored look, so it moves to this one once.
+    if (!saved.lookV2) {
+      const d = defaultSettings();
+      for (const k of ['bust', 'jiggle', 'cleavage', 'skirtLen', 'hips', 'waist', 'thighs', 'headSize', 'outfit', 'topStyle', 'bottomStyle', 'bow', 'hairColor', 'eyeColor', 'sizePx']) saved[k] = d[k];
+      saved.lookV2 = true;
+    }
     Object.assign(settings, saved, { sounds });
     if (!settings.relayToken && DEFAULT_RELAY_TOKEN) settings.relayToken = DEFAULT_RELAY_TOKEN;
   } catch (e) {
