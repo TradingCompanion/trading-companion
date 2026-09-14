@@ -522,6 +522,12 @@ async function runSelfTest() {
     ts = await tourSt();
     expect('throwing her completes the throw step', ts.step === 'look');
     expect('the look step opens the Look tab and points at it', await js("!document.getElementById('panel').hidden && !!document.querySelector('#panel .tabs button.tour-hi[data-tab=look]')"));
+    const apart = (a, b) => !!a && !!b && (a.right <= b.left || a.left >= b.right || a.bottom <= b.top || a.top >= b.bottom);
+    expect('the card and the panel do not overlap', apart(await js('window.__petTour.box()'), await panelBox()));
+    // against the right edge the panel moves to her left; the card must still stay clear of it
+    await js('window.__pet.x = window.__petBounds().max'); await adv(0.3);
+    expect('nor at the screen edge', apart(await js('window.__petTour.box()'), await panelBox()));
+    await js('window.__pet.x = 0'); await adv(0.3);
     await adv(2.5);
     await js('window.__petTour.next()'); await adv(0.3);
     ts = await tourSt();
@@ -568,6 +574,14 @@ async function runSelfTest() {
     ts = await tourSt();
     expect('the tour can be stepped through by button', !ts.active);
     await js("window.__petRelayMsg({ type: 'trade', side: 'sell', wallet: 'w', mint: 'TestBuyMint111111111111111111111111111111111', symbol: 'TEST', quote: 'SOL', amount: 0.05, tokens: 1000, pnl: null, pnlPct: null, remainingTokens: 0, remainingCost: 0 })"); await adv(1);
+    // a replay while the wallet is already live: the wallet step passes on its own
+    await js('window.__petTour.start()'); await adv(0.2);
+    await js("window.__petTour.name('Alex')"); await adv(0.2);
+    await js('window.__petTour.skip(); window.__petTour.skip(); window.__petTour.next()'); await adv(2.2);
+    ts = await tourSt();
+    expect('a replay with the wallet live moves past the wallet step by itself', ts.step === 'testbuy');
+    await js('window.__petTour.skip(); window.__petTour.next(); window.__petTour.next()'); await adv(0.3);
+    expect('and finishes', !(await tourSt()).active);
     await js('window.__petPanel(false)'); await adv(6);   // let the reactions settle before the panel section
     await js('window.__petPanel(false)'); await adv(0.3);
 

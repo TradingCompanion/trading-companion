@@ -951,6 +951,7 @@ function tourGo(i) {
   if (input) { input.onkeydown = (e) => { if (e.key === 'Enter') advance(); }; setTimeout(() => input.focus(), 50); }
   // she points at the tab the step is about, with it open in front of the user
   if (st.highlight) { openPanel(st.highlight); }
+  if (st.flag === 'wallet' && relayStatus === 'ok') { tourFlags.wallet = true; tourStepAt = T + 1.2; }   // already connected: show the step, then move on
   tourHighlight(st.highlight || null);
   if (st.say) say(st.say(y), 5);
   if (st.key === 'done') setState('wave');
@@ -977,14 +978,22 @@ function positionTour() {
   const sp = toScreen(pet.x, pet.y);
   const w = tourEl.offsetWidth || 292, h = tourEl.offsetHeight || 200;
   const gap = sizePx * 0.30 + 12;
-  // the panel takes her right when there is room; the card takes the other side
-  const panelRight = sp.x + gap + panelW <= W - 12;
-  let left = panelRight ? sp.x - gap - w : sp.x + gap;
-  let side = panelRight ? 'left' : 'right';
-  if (left < 12) { left = sp.x + gap; side = 'right'; }
-  if (left + w > W - 12) { left = sp.x - gap - w; side = 'left'; }
+  let top = clamp(sp.y - sizePx * 0.78 - 30, 12, H - h - 12);   // level with her head, where the tail points
+  let left, side;
+  const fits = (l) => l >= 12 && l + w <= W - 12;
+  if (panelOpen) {
+    // The panel is beside her. The card takes her other side; when she is against the screen edge
+    // and there is no room there, it goes beyond the panel instead — never on top of it.
+    const panelOnRight = panelLeft >= sp.x;
+    left = panelOnRight ? sp.x - gap - w : sp.x + gap; side = panelOnRight ? 'left' : 'right';
+    if (!fits(left)) { left = panelOnRight ? panelLeft + panelW + 10 : panelLeft - w - 10; side = 'none'; top = clamp(panelTop, 12, H - h - 12); }
+    if (!fits(left)) { left = clamp(panelLeft + (panelW - w) / 2, 12, W - w - 12); top = panelTop - h - 10 >= 12 ? panelTop - h - 10 : clamp(panelTop + panelH + 10, 12, H - h - 12); side = 'none'; }
+  } else {
+    const room = sp.x + gap + panelW <= W - 12;   // where the panel will go when it opens: keep that side free
+    left = room ? sp.x - gap - w : sp.x + gap; side = room ? 'left' : 'right';
+    if (!fits(left)) { left = room ? sp.x + gap : sp.x - gap - w; side = room ? 'right' : 'left'; }
+  }
   left = clamp(left, 12, W - w - 12);
-  const top = clamp(sp.y - sizePx * 0.78 - 30, 12, H - h - 12);   // level with her head, where the tail points
   tourEl.classList.toggle('left', side === 'left'); tourEl.classList.toggle('right', side === 'right');
   if (Math.abs(left - tourLeft) > 0.5) { tourEl.style.left = left.toFixed(1) + 'px'; tourLeft = left; }
   if (Math.abs(top - tourTop) > 0.5) { tourEl.style.top = top.toFixed(1) + 'px'; tourTop = top; }
