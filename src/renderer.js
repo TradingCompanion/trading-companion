@@ -1764,11 +1764,12 @@ function updateState(dt) {
     groundStep(dt);
     defaultRate = 5;
     const w = envelope(pet.t, 4.6, 0.7);
-    mixPose('leftUpperArm', -0.35, 0.3, -0.7, w);
-    mixPose('rightUpperArm', -0.35, -0.3, 0.7, w);
-    mixPose('leftLowerArm', 0.2, -0.95, -0.15, w);
-    mixPose('rightLowerArm', 0.2, 0.95, 0.15, w);
-    mixPose('leftHand', 0.35, 0, -0.3, w); mixPose('rightHand', 0.35, 0, 0.3, w);
+    // arms hanging close to her, forearms turned in so the hands meet low in front of her
+    mixPose('leftUpperArm', 0.12, 0.42, -1.02, w);
+    mixPose('rightUpperArm', 0.12, -0.42, 1.02, w);
+    mixPose('leftLowerArm', 0.1, -1.05, -0.1, w);
+    mixPose('rightLowerArm', 0.1, 1.05, 0.1, w);
+    mixPose('leftHand', 0.4, 0, -0.25, w); mixPose('rightHand', 0.4, 0, 0.25, w);
     mixPose('leftShoulder', 0.12, 0, 0.16, w); mixPose('rightShoulder', 0.12, 0, -0.16, w);   // slumped
     // two sobs, a short shoulder shudder each
     const sob = (pet.t > 1.2 && pet.t < 1.7) || (pet.t > 2.6 && pet.t < 3.1) ? Math.sin(pet.t * 28) * 0.03 : 0;
