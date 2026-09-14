@@ -5,6 +5,7 @@
   "description": "Wallet-filtered trade relay for the desktop pet (reads the local pump.fun firehose)",
   "main": "pet-relay.js",
   "dependencies": {
+    "ioredis": "^5.11.1",
     "pg": "^8.13.0",
     "ws": "^8.18.0"
   }

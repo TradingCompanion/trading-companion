@@ -6,12 +6,21 @@
 // connected pet:
 //
 //   client -> ws://HOST:9998/?token=TOKEN&wallets=addr1,addr2
-//   server -> {type:'hello', wallets, positions:[...], firehose}
-//             {type:'status', firehose}
-//             {type:'price', mint, price, quote, mcQuote, ts}   (only for mints a client holds)
-//             {type:'trade', side:'buy'|'sell', wallet, mint, symbol, name, quote:'SOL'|'USDC',
-//                            amount, tokens, mcQuote, pnl, pnlPct, cost, remainingTokens, sig, ts}
+//   server -> {type:'hello', wallets, positions:[...], firehose, solUsd}
+//             {type:'status', firehose, solUsd}
+//             {type:'price', mint, price, quote:'SOL', mcQuote, mcUsd, quoteKind, quoteSymbol, solUsd, ts}
+//             {type:'trade', side:'buy'|'sell', wallet, mint, symbol, name, venue,
+//                            quote:'SOL', amount, tokens, mcQuote, mcUsd,           <- SOL-equivalent
+//                            quoteMint, quoteSymbol, quoteKind:'sol'|'usd'|'other', quoteAmount,  <- as traded
+//                            pnl, pnlPct, cost, remainingTokens, sig, solUsd, ts}
 //             {type:'error', message}
+//
+// Every venue on the firehose is relayed — pump.fun curves, PumpSwap, Raydium LaunchLab (stonkfun,
+// bonk and the rest), Raydium CPMM, Meteora — and every quote token. Curves are quoted in whatever
+// the launcher chose (SOL, USDC, xStocks, PUMP…), so amounts and market caps are converted to
+// SOL-equivalent for one comparable cost basis, the way the harvester stores them, using the
+// harvester's own prices from Redis (`sol:price:usd`, `pump:quotes`). The raw quote travels alongside
+// so the pet can still speak dollars for a dollar-quoted coin.
 //
 // Config: server/.env (PET_RELAY_PORT, PET_RELAY_HOST, PET_RELAY_TOKEN, FIREHOSE_URL)
 // and the harvester's .env for DB_* credentials. Token falls back to server/.token.
@@ -59,8 +68,72 @@ if (!TOKEN) { try { TOKEN = fs.readFileSync(path.join(__dirname, '.token'), 'utf
 if (!TOKEN) { console.error('no PET_RELAY_TOKEN and no .token file; refusing to start without auth'); process.exit(1); }
 
 const WSOL = 'So11111111111111111111111111111111111111112';
-const USD_MINTS = new Set(['EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB']);
+const STABLES = {
+  EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v: 'USDC',
+  Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB: 'USDT',
+  USD1ttGY1N17NEEHLmELoaybftRBUSErhqYiQzvEmuB: 'USD1',
+};
 const B58 = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+
+// ------------------------------------------------------------- quote prices
+// The harvester prices every quote token it sees via Jupiter and mirrors the result into Redis
+// (`pump:quotes`: mint -> {usd, sym, ts}) next to the live SOL price (`sol:price:usd`). Reading
+// those, rather than polling Jupiter again from here, keeps this process keyless and the two in
+// agreement. Without Redis (the test harness, a box without the harvester) SOL and stablecoin
+// quotes still work; anything else waits until a price is known.
+const REDIS_URL = senv.REDIS_URL || process.env.REDIS_URL || 'redis://127.0.0.1:6379';
+const QUOTE_MAX_AGE_MS = 10 * 60000;   // a price older than this counts as unknown (harvester's rule)
+let solUsd = Number(senv.SOL_USD || process.env.SOL_USD) || 0;
+const quotes = new Map();              // mint -> { usd, sym, ts }
+let unpricedQuotes = 0, quotesLastOk = 0;
+function startQuotes() {
+  let Redis;
+  try { Redis = require('ioredis'); } catch { console.error('[quotes] ioredis not installed: only SOL and stablecoin quotes will relay'); return; }
+  const redis = new Redis(REDIS_URL, { lazyConnect: true, maxRetriesPerRequest: 1, enableOfflineQueue: false, retryStrategy: (n) => Math.min(30000, 1000 * n) });
+  let warned = false;
+  redis.on('error', (e) => { if (!warned) { warned = true; console.error('[quotes] redis:', e.message); } });
+  redis.on('ready', () => { warned = false; });
+  const tick = async () => {
+    try {
+      const [s, h] = await Promise.all([redis.get('sol:price:usd'), redis.hgetall('pump:quotes')]);
+      const n = Number(s);
+      if (n > 0) solUsd = n;
+      for (const [mint, json] of Object.entries(h || {})) {
+        try { const d = JSON.parse(json); quotes.set(mint, { usd: Number(d.usd) || 0, sym: d.sym || null, ts: Number(d.ts) || 0 }); } catch {}
+      }
+      quotesLastOk = Date.now();
+    } catch {}
+  };
+  redis.connect().then(tick).catch(() => {});
+  setInterval(tick, 5000);
+}
+startQuotes();
+// What one unit of the quote token is worth, or null while it cannot be priced.
+function quoteInfo(mint) {
+  mint = mint || WSOL;
+  if (mint === WSOL) return { usd: solUsd, sym: 'SOL', kind: 'sol' };
+  if (STABLES[mint]) return { usd: 1, sym: STABLES[mint], kind: 'usd' };
+  const q = quotes.get(mint);
+  if (!q || !(q.usd > 0) || Date.now() - q.ts > QUOTE_MAX_AGE_MS) return null;
+  return { usd: q.usd, sym: q.sym || mint.slice(0, 4) + '…', kind: 'other' };
+}
+// SOL-equivalent of an amount in the quote token. SOL passes through, so a relay with no price feed
+// at all still handles the common case; anything else needs the SOL price to convert through USD.
+function toSol(amount, q) {
+  if (q.kind === 'sol') return amount;
+  return solUsd > 0 ? (amount * q.usd) / solUsd : null;
+}
+// Where the fill happened, in the words a trader uses. stonkfun is a frontend on Raydium
+// LaunchLab with no on-chain fingerprint; the harvester's resolver marks those in tokens.is_stonkfun.
+function venueFor(ev, info) {
+  const pool = ev.pool || '';
+  if (pool === 'pump') return 'pump.fun';
+  if (pool === 'pump-amm') return 'pump.swap';
+  if (pool === 'raydium-launchpad') return ev.platform === 'bonk' ? 'bonk' : info && info.stonkfun ? 'stonkfun' : 'launchlab';
+  if (pool === 'raydium-cpmm') return 'raydium';
+  if (pool.startsWith('meteora')) return 'meteora';
+  return pool || null;
+}
 
 const pool = new Pool({
   host: henv.DB_HOST || 'localhost', port: Number(henv.DB_PORT || 5432),
@@ -170,13 +243,18 @@ function inSeededHistory(wallet, sig, mint, side, amount, tokens) {
   return true;
 }
 
+let tokensHaveFlags = true;   // is_stonkfun / launchpad exist on the harvester's schema; a plain tokens table still works
 async function lookupSymbols(mints) {
   const missing = mints.filter((m) => !symbols.has(m));
   if (missing.length) {
     try {
-      const { rows } = await pool.query('select mint, symbol, name from tokens where mint = any($1)', [missing]);
-      for (const r of rows) symbols.set(r.mint, { symbol: r.symbol, name: r.name });
-    } catch (e) { console.error('[symbols]', e.message); }
+      const cols = tokensHaveFlags ? 'mint, symbol, name, is_stonkfun, launchpad' : 'mint, symbol, name';
+      const { rows } = await pool.query(`select ${cols} from tokens where mint = any($1)`, [missing]);
+      for (const r of rows) symbols.set(r.mint, { symbol: r.symbol, name: r.name, stonkfun: r.is_stonkfun === true, launchpad: r.launchpad || null });
+    } catch (e) {
+      if (tokensHaveFlags && /column .* does not exist/i.test(e.message)) { tokensHaveFlags = false; return lookupSymbols(mints); }
+      console.error('[symbols]', e.message);
+    }
     for (const m of missing) if (!symbols.has(m)) symbols.set(m, { symbol: null, name: null });
   }
   return mints.map((m) => symbols.get(m) || { symbol: null, name: null });
@@ -184,7 +262,7 @@ async function lookupSymbols(mints) {
 
 function openPositions(wallet) {
   return [...book(wallet)].filter(([, v]) => v.tokens > 0)
-    .map(([mint, v]) => ({ mint, tokens: v.tokens, cost: v.cost, quote: v.quote, ...(symbols.get(mint) || {}) }));
+    .map(([mint, v]) => { const s = symbols.get(mint) || {}; return { mint, tokens: v.tokens, cost: v.cost, quote: v.quote, symbol: s.symbol, name: s.name }; });
 }
 
 // ------------------------------------------------------------- sessions
@@ -241,16 +319,20 @@ function emitPrice(ev) {
   const mint = ev.mint;
   if (!heldMints.has(mint)) return;
   const tokens = Number(ev.tokenAmount) || 0;
-  const amount = Number(ev.quoteAmount) || 0;
+  const q = quoteInfo(ev.quoteMint);
+  if (!q) return;
+  const amount = toSol(Number(ev.quoteAmount) || 0, q);
   if (!(tokens > 0) || !(amount > 0)) return;
-  const quoteMint = ev.quoteMint || WSOL;
-  const quote = quoteMint === WSOL ? 'SOL' : USD_MINTS.has(quoteMint) ? 'USDC' : null;
-  if (!quote) return;
   const now = Date.now();
   if (now - (lastTick.get(mint) || 0) < PRICE_MS) return;
   lastTick.set(mint, now);
   pricesRelayed++;
-  broadcastMint(mint, { type: 'price', mint, price: amount / tokens, quote, mcQuote: Number(ev.marketCapQuote) || null, ts: now });
+  const mcRaw = Number(ev.marketCapQuote) || 0;
+  broadcastMint(mint, {
+    type: 'price', mint, price: amount / tokens, quote: 'SOL',
+    mcQuote: mcRaw > 0 ? toSol(mcRaw, q) : null, mcUsd: mcRaw > 0 && q.usd > 0 ? mcRaw * q.usd : null,
+    quoteKind: q.kind, quoteSymbol: q.sym, solUsd: solUsd || null, ts: now,
+  });
 }
 function broadcastAll(obj) { for (const s of sessions) send(s.ws, obj); }
 
@@ -312,10 +394,18 @@ async function handleTrade(ev, wallet) {
   if (dedupe(key)) return;
   const mint = ev.mint;
   const tokens = Number(ev.tokenAmount) || 0;
-  const amount = Number(ev.quoteAmount) || 0;
   const quoteMint = ev.quoteMint || WSOL;
-  const quote = quoteMint === WSOL ? 'SOL' : USD_MINTS.has(quoteMint) ? 'USDC' : null;
-  if (!quote || !mint || tokens <= 0 || amount <= 0) return;
+  const quoteAmount = Number(ev.quoteAmount) || 0;
+  const q = quoteInfo(quoteMint);
+  if (!q) {
+    // a quote nobody has priced yet (a brand-new xStock, a Redis outage): the book cannot take it
+    unpricedQuotes++;
+    console.log(`[trade] ${side} ${wallet.slice(0, 6)}… ${mint.slice(0, 6)}: quote ${quoteMint.slice(0, 8)}… has no price, skipped`);
+    return;
+  }
+  const amount = toSol(quoteAmount, q);
+  if (!mint || tokens <= 0 || !(amount > 0)) return;
+  const quote = 'SOL';   // the book is kept in SOL-equivalent whatever the pair; the raw quote travels alongside
   await seedWallet(wallet);
   const st = seeded.get(wallet);
   // A fill that reached the database before the seed query ran is already in the book. Applying it
@@ -336,13 +426,17 @@ async function handleTrade(ev, wallet) {
   }
   const [sym] = await lookupSymbols([mint]);
   tradesRelayed++;
+  const mcRaw = Number(ev.marketCapQuote) || 0;
+  const venue = venueFor(ev, sym);
   const msg = {
-    type: 'trade', side, wallet, mint, symbol: sym.symbol, name: sym.name, quote,
-    amount, tokens, mcQuote: Number(ev.marketCapQuote) || null,
+    type: 'trade', side, wallet, mint, symbol: sym.symbol, name: sym.name, venue, quote,
+    amount, tokens, mcQuote: mcRaw > 0 ? toSol(mcRaw, q) : null, mcUsd: mcRaw > 0 && q.usd > 0 ? mcRaw * q.usd : null,
+    quoteMint, quoteSymbol: q.sym, quoteKind: q.kind, quoteAmount,
     pnl: r.pnl, pnlPct: r.pnlPct, cost: r.cost, remainingTokens: r.remainingTokens, remainingCost: r.remainingCost,
-    sig: ev.signature || null, ts: Date.now(),
+    sig: ev.signature || null, solUsd: solUsd || null, ts: Date.now(),
   };
-  console.log(`[trade] ${side.padEnd(4)} ${wallet.slice(0, 6)}… ${sym.symbol || mint.slice(0, 6)} ${amount.toFixed(4)} ${quote}` +
+  console.log(`[trade] ${side.padEnd(4)} ${wallet.slice(0, 6)}… ${sym.symbol || mint.slice(0, 6)} ${amount.toFixed(4)} SOL` +
+    (q.kind !== 'sol' ? ` (${quoteAmount} ${q.sym})` : '') + (venue ? ` on ${venue}` : '') +
     (r.pnl != null ? ` pnl ${r.pnl >= 0 ? '+' : ''}${r.pnl.toFixed(4)} (${r.pnlPct.toFixed(1)}%)` : ''));
   broadcastWallet(wallet, msg);
   rebuildHeld(); // this fill may have opened or closed a position
@@ -379,6 +473,7 @@ const server = http.createServer((req, res) => {
       ok: firehoseUp, firehose: firehoseUp, public: PUBLIC,
       clients: sessions.size, capacity: MAX_SESSIONS, watched: watched.size, heldMints: heldMints.size,
       eventsSeen, eventsUnparsed, tradesRelayed, pricesRelayed,
+      solUsd: solUsd || null, quotesKnown: quotes.size, quotesAgeMs: quotesLastOk ? Date.now() - quotesLastOk : null, unpricedQuotes,
       seedsInFlight, seedsQueued: seedQueue.length, seededWallets: seeded.size,
       msSinceLastEvent: lastEventAt ? Date.now() - lastEventAt : null,
     }));
@@ -434,14 +529,14 @@ wss.on('connection', async (ws, req) => {
   const pos = [];
   for (const w of wallets) pos.push(...openPositions(w));
   await lookupSymbols(pos.map((p) => p.mint));
-  send(ws, { type: 'hello', wallets: [...wallets], positions: pos.map((p) => ({ ...p, ...(symbols.get(p.mint) || {}) })), firehose: firehoseUp });
+  send(ws, { type: 'hello', wallets: [...wallets], positions: pos, firehose: firehoseUp, solUsd: solUsd || null });
 });
 
 setInterval(() => {
   for (const s of sessions) {
     if (!s.alive) { try { s.ws.terminate(); } catch {} continue; }
     s.alive = false; try { s.ws.ping(); } catch {}
-    send(s.ws, { type: 'status', firehose: firehoseUp, heartbeat: true });
+    send(s.ws, { type: 'status', firehose: firehoseUp, heartbeat: true, solUsd: solUsd || null });
   }
 }, 25000);
 

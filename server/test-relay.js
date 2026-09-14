@@ -56,6 +56,7 @@ function client(wallets, opts = {}) {
       PET_MAX_PER_IP: '2', PET_MAX_WALLETS: '2', PET_MAX_WALLETS_AUTHED: '10',
       DB_HOST: '127.0.0.1', DB_PORT: '1',            // nothing listens: the seed must fail cleanly
       HARVESTER_DIR: path.join(__dirname, 'no-such-dir'),
+      SOL_USD: '100',                                 // no Redis here: a fixed SOL price stands in for the harvester's
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -98,6 +99,26 @@ function client(wallets, opts = {}) {
 
   const h1 = await health();
   expect('unmatched-event counter stays near zero on well-formed input', h1.eventsUnparsed <= 1);
+  expect('the SOL price is reported', h1.solUsd === 100 && a.got.hello.solUsd === 100);
+
+  // ---- other venues and quotes -----------------------------------------------------------------
+  // a LaunchLab curve quoted in USDC: converted to SOL-equivalent, the raw quote alongside
+  const MINT2 = 'BFPgbDixEMCuAzazAXJr4TicVidiA2ZGCwuUWjqaPkNC';
+  emit(trade(W1, MINT2, 'buy', { quoteMint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', quoteAmount: 50, marketCapQuote: 5000, pool: 'raydium-launchpad', platform: 'custom' }));
+  await sleep(600);
+  const t2 = a.got.trades[2];
+  expect('a LaunchLab fill quoted in USDC reaches the client', !!t2 && t2.mint === MINT2);
+  expect('its amount is SOL-equivalent, the raw quote alongside', !!t2 && Math.abs(t2.amount - 0.5) < 1e-9 && t2.quote === 'SOL' && t2.quoteAmount === 50 && t2.quoteKind === 'usd' && t2.quoteSymbol === 'USDC');
+  expect('its market cap comes in dollars and in SOL', !!t2 && t2.mcUsd === 5000 && Math.abs(t2.mcQuote - 50) < 1e-9);
+  expect('and it says where the fill happened', !!t2 && t2.venue === 'launchlab');
+  emit(trade(W1, MINT, 'sell', { pool: 'pump-amm' }));
+  await sleep(500);
+  expect('a PumpSwap fill is labelled as such', a.got.trades.length === 4 && a.got.trades[3].venue === 'pump.swap');
+  // a quote nobody has priced: the book cannot take it, and the health page says so
+  emit(trade(W1, MINT2, 'buy', { quoteMint: 'QUBTAD8C9bMU9LvmMNgKPhrmBGbHvxpu6vfWQtThxxw', quoteAmount: 3, pool: 'raydium-launchpad' }));
+  await sleep(500);
+  const hq = await health();
+  expect('a fill in an unpriced quote is skipped, not mangled', a.got.trades.length === 4 && hq.unpricedQuotes === 1);
 
   // ---- limits ----------------------------------------------------------------------------------
   const b = client(W2);
@@ -130,7 +151,7 @@ function client(wallets, opts = {}) {
   emit(trade(W1, MINT));
   await sleep(700);
   expect('every session watching a wallet gets its trade',
-    a.got.trades.length === 3 && authed.got.trades.length === 1);
+    a.got.trades.length === 5 && authed.got.trades.length === 1);
 
   for (const cl of [a, many, authed]) cl.ws.close();
   await sleep(500);

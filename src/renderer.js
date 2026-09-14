@@ -477,16 +477,28 @@ const fin = (v) => {
   return Number.isFinite(n) ? n : null;
 };
 const str = (v, max) => (typeof v === 'string' ? v.slice(0, max) : null);
+// The live SOL price, as the relay last reported it. Market caps arrive in dollars already; this is
+// only for turning a SOL-equivalent PnL into dollars on a dollar-quoted coin, and for the fallback.
+let liveSolUsd = 0;
+const noteSolUsd = (m) => { const v = fin(m && m.solUsd); if (v > 0) liveSolUsd = v; };
+const QUOTE_KINDS = new Set(['sol', 'usd', 'other']);
+const VENUES = { 'pump.fun': 'pump.fun', 'pump.swap': 'PumpSwap', launchlab: 'LaunchLab', stonkfun: 'stonkfun', bonk: 'Bonk', raydium: 'Raydium', meteora: 'Meteora' };
 function cleanTrade(m) {
   m.side = m.side === 'sell' ? 'sell' : 'buy';
   m.mint = str(m.mint, 64) || '';
   m.symbol = str(m.symbol, 24);
   m.quote = m.quote === 'USDC' ? 'USDC' : 'SOL';
+  // an older relay says quote:'USDC' with dollar amounts; the current one says quote:'SOL' (SOL-
+  // equivalent) and tells us what the pair was really quoted in via quoteKind
+  m.quoteKind = QUOTE_KINDS.has(m.quoteKind) ? m.quoteKind : m.quote === 'USDC' ? 'usd' : 'sol';
+  m.quoteSymbol = str(m.quoteSymbol, 16);
+  m.venue = VENUES[m.venue] ? m.venue : null;
   m.amount = Math.max(0, fin(m.amount) ?? 0);
   m.tokens = Math.max(0, fin(m.tokens) ?? 0);
   m.pnl = fin(m.pnl); m.pnlPct = fin(m.pnlPct);           // null when the relay has no cost basis
-  m.mcQuote = fin(m.mcQuote);
+  m.mcQuote = fin(m.mcQuote); m.mcUsd = fin(m.mcUsd);
   m.remainingTokens = fin(m.remainingTokens); m.remainingCost = fin(m.remainingCost);
+  noteSolUsd(m);
   return m;
 }
 function cleanPosition(p) {
@@ -497,6 +509,7 @@ function cleanPosition(p) {
   };
 }
 function handleRelay(m) {
+  noteSolUsd(m);
   if (m.type === 'hello') {
     relayStatus = 'ok';
     positions.clear(); // the relay is authoritative for what is open (session totals survive a reconnect)
@@ -518,10 +531,12 @@ function handleRelay(m) {
   } else if (m.type === 'price') {
     const p = positions.get(str(m.mint, 64) || '');
     if (p) {
-      const mc = fin(m.mcQuote), price = fin(m.price);
+      const mc = fin(m.mcQuote), price = fin(m.price), mcUsd = fin(m.mcUsd);
       if (mc > 0) p.mc = mc;                 // the honest, quote-agnostic mark
+      if (mcUsd > 0) p.mcUsd = mcUsd;
       if (price > 0) p.price = price;
       if (m.quote === 'USDC' || m.quote === 'SOL') p.quote = m.quote;
+      if (QUOTE_KINDS.has(m.quoteKind)) p.quoteKind = m.quoteKind;
     }
   } else if (m.type === 'trade') {
     cleanTrade(m);
@@ -565,7 +580,8 @@ function trackTrade(m) {
   } else if (prev && prev.tokens > 0) {
     invSum *= clamp((m.remainingTokens ?? 0) / prev.tokens, 0, 1); // sell the same fraction of the basis
   }
-  const o = { tokens: m.remainingTokens ?? 0, cost: m.remainingCost ?? 0, quote: m.quote, symbol: m.symbol, at: T, live: true, invSum };
+  const o = { tokens: m.remainingTokens ?? 0, cost: m.remainingCost ?? 0, quote: m.quote, quoteKind: m.quoteKind, venue: m.venue, symbol: m.symbol, at: T, live: true, invSum };
+  if (m.mcUsd > 0) o.mcUsd = m.mcUsd;
   if (o.tokens > 0) liveMints.add(m.mint); else liveMints.delete(m.mint);
   if (mc > 0) o.mc = mc;
   const price = m.tokens > 0 ? m.amount / m.tokens : 0;
@@ -574,7 +590,7 @@ function trackTrade(m) {
 }
 function reactToTrade(t) {
   const sym = t.symbol ? `$${t.symbol}` : `${(t.mint || '').slice(0, 4)}…`;
-  const money = (n) => (t.quote === 'USDC' ? `$${fmtNum(Math.abs(n))}` : `${fmtNum(Math.abs(n))} SOL`);
+  const money = (n) => signMoney(n, t.quote, t.quoteKind);
   const busy = pet.state === 'grabbed' || pet.state === 'falling';
   pet.lastInteraction = T;
   if (t.side === 'buy') {
@@ -701,7 +717,8 @@ function renderPanel() {
         <div class="f"><label>Board style</label><select id="fSignStyle">${SIGN_STYLES.map((st, i) => `<option value="${i}"${i === SIGN_STYLES.indexOf(signStyle()) ? ' selected' : ''}>${esc(st.label)}</option>`).join('')}</select></div></div>
       <div class="f">${lab('Board size', pct(c.signSize ?? 1))}<input type="range" id="fSignSize" min="0.5" max="1.8" step="0.05" value="${c.signSize ?? 1}"></div>
       <div class="hint">Held in both hands the board is sized to her grip, so this only widens the overhang.</div>
-      <div class="row"><div class="f half"><label>SOL price $</label><input type="text" id="fSolPrice" value="${esc(String(c.solPrice ?? 101.95))}" spellcheck="false"></div><div class="f"></div></div>
+      <div class="row"><div class="f half">${lab('SOL price $', liveSolUsd > 0 ? 'live ' + liveSolUsd.toFixed(2) : 'fallback')}<input type="text" id="fSolPrice" value="${esc(String(c.solPrice ?? 101.95))}" spellcheck="false"></div><div class="f"></div></div>
+      <div class="hint">The relay sends the live SOL price; this is only used until it has.</div>
       <div class="sep"></div>
       <div class="f"><label>Try it out</label>
         <div class="btnrow"><button class="ghost" id="btnTestSign">${demoPos ? 'Stop test' : 'Test position'}</button></div></div>
@@ -1771,15 +1788,24 @@ function livePosition() {
   return best;
 }
 
-// The feed gives market cap in the token's own quote asset. Dollars are the only figure a
-// viewer can read at a glance, so convert with the SOL price when we know the pair.
-function mcText(mc, quote) {
+// Dollars are the only market cap a viewer reads at a glance. The relay sends it in dollars
+// (`mcUsd`) priced from the pair's real quote; failing that, a SOL-equivalent cap is converted with
+// the live SOL price, and only with the panel's typed-in price when the relay has never sent one.
+const solRate = () => (liveSolUsd > 0 ? liveSolUsd : Number(cfg?.solPrice) > 0 ? Number(cfg.solPrice) : 101.95);
+function mcText(mc, quote, mcUsd) {
+  if (mcUsd > 0) return 'MC $' + compactNum(mcUsd);
   if (!(mc > 0)) return null;
   if (quote === 'USDC') return 'MC $' + compactNum(mc);
-  if (!quote || quote === 'SOL') return 'MC $' + compactNum(mc * (Number(cfg?.solPrice) > 0 ? Number(cfg.solPrice) : 101.95));
+  if (!quote || quote === 'SOL') return 'MC $' + compactNum(mc * solRate());
   return 'MC ' + compactNum(mc) + ' ' + quote; // some other pair: no rate to convert with
 }
-const signMoney = (n, quote) => (quote === 'USDC' ? `$${fmtNum(Math.abs(n))}` : `${fmtNum(Math.abs(n))} SOL`);
+// A coin quoted in dollars is talked about in dollars, even though the book behind it is kept in
+// SOL-equivalent; everything else is SOL.
+function signMoney(n, quote, kind) {
+  if (quote === 'USDC') return `$${fmtNum(Math.abs(n))}`;
+  if (kind === 'usd' && liveSolUsd > 0) return `$${fmtNum(Math.abs(n) * liveSolUsd)}`;
+  return `${fmtNum(Math.abs(n))} SOL`;
+}
 
 // One open position, priced right now. Used both when choosing what to show and to keep a
 // board that is already up refreshed while a newer position waits its turn.
@@ -1790,13 +1816,15 @@ function buildPositionContent(p) {
   const pct = p.cost > 0 ? (pnl / p.cost) * 100 : 0;
   let open = 0;
   for (const q of positions.values()) if (q.tokens > 0 && q.live) open++;
-  const cap = byMc ? mcText(p.mc, p.quote) : null;
+  const cap = byMc || p.mcUsd > 0 ? mcText(p.mc, p.quote, p.mcUsd) : null;
+  // where she bought it, the dollar cap, how many bags are open — whatever of those is known
+  const foot = [VENUES[p.venue] || null, cap, open > 1 ? open + ' open' : null].filter(Boolean).join(' \u00b7 ') || null;
   return {
     id: 'pos:' + p.mint,
     title: p.symbol ? '$' + p.symbol : p.mint.slice(0, 4) + '\u2026',
-    amount: (pnl >= 0 ? '+' : '\u2212') + signMoney(pnl, p.quote),
+    amount: (pnl >= 0 ? '+' : '\u2212') + signMoney(pnl, p.quote, p.quoteKind),
     sub: `${pct >= 0 ? '+' : '\u2212'}${Math.abs(pct).toFixed(Math.abs(pct) >= 100 ? 0 : 1)}%`,
-    foot: open > 1 ? (cap ? cap + ' \u00b7 ' : '') + open + ' open' : cap,
+    foot,
     tone: pnl > 1e-9 ? 1 : pnl < -1e-9 ? -1 : 0,
   };
 }
