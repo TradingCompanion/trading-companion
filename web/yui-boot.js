@@ -118,6 +118,7 @@
     },
 
     contextMenu: function () {},                 // no native menu here; a click opens her panel
+    editMenu: function () {},                    // the browser has its own
     saveState: function (s) { if (s && typeof s.x === 'number') { settings.x = s.x; persist(); } },
     modelReady: function () { document.documentElement.classList.add('yui-ready'); emit('ready'); },
     modelFailed: function () { document.documentElement.classList.add('yui-failed'); emit('failed'); },

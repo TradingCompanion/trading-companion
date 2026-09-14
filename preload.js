@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('pet', {
   onCommand: (cb) => ipcRenderer.on('command', (_e, c) => cb(c)),
   setIgnore: (v) => ipcRenderer.send('set-ignore', v),
   contextMenu: () => ipcRenderer.send('context-menu'),
+  editMenu: () => ipcRenderer.send('edit-menu'),
   saveState: (s) => ipcRenderer.send('save-state', s),
   modelReady: () => ipcRenderer.send('model-ready'),
   modelFailed: () => ipcRenderer.send('model-failed'),

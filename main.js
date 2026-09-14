@@ -65,7 +65,7 @@ try {
 // Everything she remembers lives in one object, written to settings.json a moment after it changes
 // and read back on the next boot. "Reset everything" rebuilds it from here.
 function defaultSettings() { return {
-  model: null, sizePx: 320, alwaysOnTop: true, x: null,
+  model: null, sizePx: 640, alwaysOnTop: true, x: null,
   tourDone: false, userName: '',     // the first-run tour, and what she calls the user
   volume: 0.6, pitch: 1.0, muted: false,
   // Her figure. Mirrored by FIG in src/renderer.js — change both.
@@ -154,7 +154,11 @@ function createWindow() {
   win.setOpacity(0.99);
   if (settings.alwaysOnTop) win.setAlwaysOnTop(true, 'screen-saver');
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  win.setMenu(null);
+  // No menu bar — but the edit shortcuts (Ctrl+C / V / X / A) come from menu roles, and removing the
+  // menu outright removed them too, so nothing could be pasted into the wallet field. Keep an
+  // invisible menu that only carries the edit roles.
+  Menu.setApplicationMenu(Menu.buildFromTemplate([{ role: 'editMenu' }]));
+  win.setMenuBarVisibility(false);
   setIgnore(true);
   console.log('[pet] build', buildStamp());
   win.loadFile('index.html');
@@ -262,6 +266,8 @@ function createTray() {
 
 ipcMain.on('set-ignore', (_e, v) => setIgnore(!!v));
 ipcMain.on('context-menu', () => { if (win) buildMenu().popup({ window: win }); });
+// right-click in a text field: the usual cut / copy / paste, since her own context menu covers everything else
+ipcMain.on('edit-menu', () => { if (win) Menu.buildFromTemplate([{ role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { type: 'separator' }, { role: 'selectAll' }]).popup({ window: win }); });
 ipcMain.on('save-state', (_e, s) => { if (s && typeof s.x === 'number') { settings.x = s.x; saveSettings(); } });
 // partial settings update from the in-app settings panel
 ipcMain.on('save-settings', (_e, patch) => {
@@ -609,6 +615,15 @@ async function runSelfTest() {
     const pr = await js("(()=>{const r=document.getElementById('panel').getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}})()");
     await mouse('mouseMove', pr.x, pr.y); await adv(0.1);
     expect('panel open: panel catches the mouse', ignoring === false);
+    // paste into the wallet field: the edit roles must survive the hidden menu bar
+    await js("[...document.querySelectorAll('#panel .tabs button')].find(b=>b.dataset.tab==='wallet').click()"); await adv(0.2);
+    const { clipboard } = require('electron');
+    clipboard.writeText('4Nd1mBQtrMJVYVfKf2PJy9NZaZdrb8TBH3a4a8Mo4CkT');
+    await js("document.querySelector('#panel #fWallets').focus(); document.querySelector('#panel #fWallets').value = ''");
+    win.webContents.paste(); await sleep(300);
+    expect('paste works in the wallet field', await js("document.querySelector('#panel #fWallets').value") === '4Nd1mBQtrMJVYVfKf2PJy9NZaZdrb8TBH3a4a8Mo4CkT');
+    await js("document.querySelector('#panel #fWallets').value = ''");
+    expect('she comes in Huge by default', defaultSettings().sizePx === 640);
     await js('window.__petPanel(false)'); await adv(0.2);
     await js("window.__petReact({ side: 'sell', symbol: 'PEPE', quote: 'SOL', amount: 1.42, pnl: 0.61, pnlPct: 75 })"); await adv(0.7);
     const ic1 = await shot('15-profit.png'); expect('profit -> cheer', ic1.state === 'cheer');

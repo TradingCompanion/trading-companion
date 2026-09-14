@@ -33,7 +33,7 @@ class Spring {
 const bridge = window.pet || {
   // fallback so the renderer also runs in a plain browser for development
   onCursor() {}, onSettings() {}, onModel() {}, onCommand() {},
-  setIgnore() {}, contextMenu() {}, saveState() {}, modelReady() {}, modelFailed() {}, requestModel() {}, log: console.log,
+  setIgnore() {}, contextMenu() {}, editMenu() {}, saveState() {}, modelReady() {}, modelFailed() {}, requestModel() {}, log: console.log,
   saveSettings() {}, pickModel() {}, defaultModel() {}, quit() {}, openSoundsFolder() {}, rescanSounds() {},
 };
 
@@ -886,8 +886,8 @@ function closeHer() { if (panelOpen) closePanel(); }
 // tab or after a reset. Nothing here blocks her: she still reacts, walks and talks throughout.
 const tourEl = document.getElementById('tour');
 const TOUR = [
-  { key: 'name', eyebrow: 'Welcome', title: "Hi! I'm Yui", body: "I'll live down here on your taskbar and react to your trades. First — what should I call you?",
-    input: true, cta: 'Nice to meet you', say: () => 'Hi! What should I call you?' },
+  { key: 'name', eyebrow: 'Welcome', title: "Hi! I'm Yui, your Trading Companion", body: "I'll live down here on your taskbar, watch your wallet and react to every trade — cheering, sulking, keeping score. First: what should I call you?",
+    input: true, cta: 'Nice to meet you', say: () => "I'm Yui, your Trading Companion~ What should I call you?" },
   { key: 'click', eyebrow: 'Step 1 of 7', title: 'Click me once', body: 'That opens my settings. Click me again to put them away, or press Escape.',
     wait: 'waiting for a click', flag: 'panel', skip: 'Skip', say: (y) => `Click me${y ? ', ' + y : ''}~` },
   { key: 'throw', eyebrow: 'Step 2 of 7', title: 'Pick me up', body: 'Grab me anywhere and drag. Let go while moving and I fly. I land on my feet. Mostly.',
@@ -1114,7 +1114,11 @@ window.addEventListener('mouseup', (e) => {
 // Without these an exception just stops her mid-frame with nothing in the log to explain it.
 window.addEventListener('error', (e) => bridge.log('renderer error: ' + (e.message || e.error)));
 window.addEventListener('unhandledrejection', (e) => bridge.log('unhandled rejection: ' + ((e.reason && e.reason.message) || e.reason)));
-window.addEventListener('contextmenu', (e) => e.preventDefault());
+window.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  const t = e.target;
+  if (t instanceof HTMLInputElement && (t.type === 'text' || t.type === 'password')) { t.focus(); bridge.editMenu(); }   // cut / copy / paste in her fields
+});
 window.addEventListener('dblclick', (e) => e.preventDefault());
 
 bridge.onCommand((c) => {
