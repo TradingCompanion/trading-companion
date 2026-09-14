@@ -1637,10 +1637,12 @@ function idleMicro(dt) {
     // pulls out a phone: both hands up in front, head down, thumb scrolling now and then
     const q = Math.sin(Math.PI * clamp(m.t / m.dur, 0, 1));
     const k = smoothstep(Math.min(m.t, m.dur - m.t) / 0.7);   // hands come up, stay, go down
-    mixPose('leftUpperArm', -0.55, 0.05, -0.55, k);  mixPose('rightUpperArm', -0.55, -0.05, 0.55, k);
-    mixPose('leftLowerArm', 0, -1.95, -0.35, k);     mixPose('rightLowerArm', 0, 1.95, 0.35, k);
-    mixPose('leftHand', 0.3, 0.2, 0, k);             mixPose('rightHand', 0.3 + 0.18 * Math.max(0, Math.sin(m.t * 5.5)) * (Math.sin(m.t * 0.9) > 0.3 ? 1 : 0), -0.2, 0, k);
-    addPose('head', 0.4 * k, 0, 0.04 * Math.sin(m.t * 0.7) * k);
+    const [ux, uy, uz] = PHONE_TUNE.ua, [lx, ly, lz] = PHONE_TUNE.la, [hx, hy, hz] = PHONE_TUNE.hd;
+    const scroll = 0.18 * Math.max(0, Math.sin(m.t * 5.5)) * (Math.sin(m.t * 0.9) > 0.3 ? 1 : 0);   // the thumb, now and then
+    mixPose('leftUpperArm', ux, uy, -uz, k);          mixPose('rightUpperArm', ux, -uy, uz, k);
+    mixPose('leftLowerArm', lx, -ly, -lz, k);         mixPose('rightLowerArm', lx, ly, lz, k);
+    mixPose('leftHand', hx, hy, -hz, k);              mixPose('rightHand', hx + scroll, -hy, hz, k);
+    addPose('head', PHONE_TUNE.head * k, 0, 0.04 * Math.sin(m.t * 0.7) * k);
     addPose('spine', 0.06 * k, 0, 0);
     expr('relaxed', 0.4 * k);
     if (Math.sin(m.t * 1.3 + 2) > 0.8) expr('happy', 0.5 * k);   // something funny on the timeline
@@ -2064,15 +2066,19 @@ function updateState(dt) {
     groundStep(dt);
     defaultRate = 16;
     const w = envelope(pet.t, 2.4, 0.2);
-    const point = smoothstep((pet.t - 0.8) / 0.4);                  // hands to cheeks first, then the point
-    const side = sign && sign.mesh.visible ? sign.side : -1;         // which hand the board is on
-    const pa = side < 0 ? 'right' : 'left', k = side < 0 ? 1 : -1, oa = side < 0 ? 'left' : 'right';
-    mixPose(oa + 'UpperArm', -0.3, 0, -0.95 * k, w);  mixPose(oa + 'LowerArm', 0, 1.7 * -k, 0.5 * -k, w); mixPose(oa + 'Hand', 0.2, 0, 0, w);   // cheek
-    mixPose(pa + 'UpperArm', lerp(-0.3, -1.2, point), 0, lerp(0.95 * k, 0.35 * k, point), w);
-    mixPose(pa + 'LowerArm', 0, lerp(1.7 * k, 0.15 * k, point), lerp(0.5 * k, 0, point), w);   // cheek, then straight out at the board
-    mixPose(pa + 'Hand', 0, 0, 0, w);
-    addPose('head', -0.14 * w, 0.18 * k * point * w, 0.08 * w);
-    addPose('spine', -0.06 * w, 0.1 * k * point * w, 0);
+    const point = smoothstep((pet.t - 0.8) / 0.4);
+    const held = sign && sign.mesh.visible, two = held && sign.two;
+    const side = held ? sign.side : -1;                              // the board hangs on her right (side < 0) or left
+    const k = side < 0 ? 1 : -1;
+    if (!two) {
+      // the free hand flies to her cheek, then points at the board; the holding arm is signPose's
+      const fa = side < 0 ? 'left' : 'right', fk = -k;
+      mixPose(fa + 'UpperArm', lerp(-0.3, -1.1, point), 0, lerp(0.95 * fk, 0.25 * k, point), w);
+      mixPose(fa + 'LowerArm', 0, lerp(1.7 * fk, 0.15 * fk, point), lerp(0.5 * fk, 0, point), w);
+      mixPose(fa + 'Hand', lerp(0.2, 0, point), 0, 0, w);
+    }
+    addPose('head', -0.16 * w, 0.14 * k * point * w, 0.08 * w);
+    addPose('spine', -0.1 * w + (two ? -0.06 * point * w : 0), 0.08 * k * point * w, 0);   // both hands: she thrusts the board up at you
     bobTarget = 0.03 * model.height * Math.max(0, Math.sin(pet.t * 9)) * (pet.t < 0.7 ? w : 0);   // a little bounce on the gasp
     expr('surprised', w); expr('aa', 0.6 * w); expr('happy', 0.4 * point * w);
     headLook(0.2);
@@ -2295,6 +2301,8 @@ let TWO_GRIP = { amt: 1.15, roll: -1.50 };    // fingers curl ONTO the board fac
 let HOLD_TWO = { ua: [0, 0, 0.45], la: [0, 1.30, 0.70], hd: [-1.50, 0, 0] };
 // the loss pose's arms (right side; the left is mirrored): upper arm, forearm, hand
 let SAD_TUNE = { ua: [-0.5, 0.1, 1.12], la: [0, 1.0, 0.9], hd: [0.3, 0, 0.2] };
+// the phone pose's arms (right side; the left is mirrored) and how far the head drops to it
+let PHONE_TUNE = { ua: [-1.0, 0.1, 0.8], la: [0, 0.8, 1.15], hd: [-0.9, 0, 0.3], head: 0.55 };
 let TWO_BOTTOM = 0.40;   // board bottom, in body heights above her feet (over her stomach, under the bust)
 let TWO_FWD = 0.10;      // just clear of her stomach (measured front surface ~0.083)
 const FINGERS = ['Index', 'Middle', 'Ring', 'Little'];
@@ -3518,10 +3526,10 @@ function spawnConfetti(n) {
   if (!model) return;
   const h = model.height;
   for (let i = 0; i < n; i++) sparks.push({
-    x: rand(-0.15, 0.15) * h, y: rand(0.7, 1.0) * h,
-    vx: rand(-0.9, 0.9) * h, vy: rand(0.9, 2.1) * h,
-    life: 0, dur: rand(1.6, 2.6), size: rand(3, 6), spin: rand(0, Math.PI * 2),
-    confetti: pick(CONFETTI), spinV: rand(-8, 8), grav: 1.7 * h,
+    x: rand(-0.2, 0.2) * h, y: rand(0.55, 0.95) * h,
+    vx: rand(-0.7, 0.7) * h, vy: rand(0.5, 1.3) * h,
+    life: 0, dur: rand(1.8, 2.8), size: rand(7, 12), spin: rand(0, Math.PI * 2),
+    confetti: pick(CONFETTI), spinV: rand(-8, 8), grav: 1.1 * h,
   });
 }
 
@@ -4109,6 +4117,7 @@ window.__petSignPose = (p) => { if (sign) sign.pose = p; };
 window.__petSignTwo = (v) => { if (sign) { sign.two = v; sign.text = ''; } };
 window.__petTwoGrip = (amt, roll) => { TWO_GRIP = { amt, roll }; if (sign) sign.text = ''; };
 window.__petSadTune = (ua, la, hd) => { SAD_TUNE = { ua, la, hd }; };
+window.__petPhoneTune = (ua, la, hd, head) => { PHONE_TUNE = { ua, la, hd, head: head ?? PHONE_TUNE.head }; };
 window.__petTwoTune = (ua, la, hd, bottom, fwd) => { HOLD_TWO = { ua, la, hd }; if (bottom != null) TWO_BOTTOM = bottom; if (fwd != null) TWO_FWD = fwd; };
 window.__petBustFront = () => { if (!model) return null; const v = new THREE.Vector3(); let maxZ = -9; for (const n of ['J_Sec_L_Bust2', 'J_Sec_R_Bust2', 'J_Sec_L_Bust1', 'J_Sec_R_Bust1']) { const b = model.vrm.scene.getObjectByName(n); if (!b) continue; b.getWorldPosition(v); maxZ = Math.max(maxZ, v.z); } return { bustTipZ: +(maxZ / model.height).toFixed(3), bustScale: model.bust.nodes[0] ? +model.bust.nodes[0].scale.x.toFixed(2) : 0 }; };
 window.__petTorsoFront = () => { if (!model) return null; const v = new THREE.Vector3(); let maxZ = -9, at = 0; model.vrm.scene.traverse((o) => { if (!o.isSkinnedMesh && !o.isMesh) return; const p = o.geometry && o.geometry.attributes.position; if (!p) return; for (let i = 0; i < p.count; i += 5) { v.fromBufferAttribute(p, i); o.localToWorld(v); const ay = (v.y - pet.y) / model.height; if (ay < 0.45 || ay > 0.92) continue; if (v.z > maxZ) { maxZ = v.z; at = ay; } } }); return { frontZ: +(maxZ / model.height).toFixed(3), atHeight: +at.toFixed(2) }; };

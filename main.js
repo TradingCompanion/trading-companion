@@ -352,6 +352,7 @@ app.whenReady().then(async () => {
   // relay.local.json, takes precedence and is never overwritten.
   if (!settings.relayUrl) settings.relayUrl = DEFAULT_RELAY_URL || PUBLIC_RELAY;
   if (TEST) { settings.x = null; settings.tourDone = true; }   // the tour has its own section in the self-test
+  if (process.env.PET_PROBE) { settings.autoConnect = false; settings.lastGreetDay = '9999-99-99'; }   // a probe wants her still: no relay attempt, no greeting
   if (process.env.PET_TEST_RELAY) {
     // PET_TEST_RELAY = ws://host:port|token|wallet  -> the self-test also drives a relay round-trip
     const [u, t, w] = process.env.PET_TEST_RELAY.split('|');
@@ -381,7 +382,7 @@ async function runProbe() {
     await js(code); await js('window.__petAdvance(' + (Number(secs) || 1) + ')');
     await new Promise((r) => setTimeout(r, 200));
     fs.writeFileSync(path.join(outDir, 'probe.png'), (await wc.capturePage()).toPNG());
-    fs.writeFileSync(path.join(outDir, 'probe.json'), JSON.stringify(await js('window.__petInfo()')));
+    fs.writeFileSync(path.join(outDir, 'probe.json'), JSON.stringify(await js('Object.assign(window.__petInfo(), { t: window.__pet.t, crouch: window.__pet.crouch, bob: window.__pet.bob, mood: window.__pet.mood, sign: window.__petSign() })')));
   } catch (e) { console.error('[probe]', e.message); }
   app.quit();
 }
