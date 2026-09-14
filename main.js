@@ -510,7 +510,20 @@ async function runSelfTest() {
     expect('next moves to the wallet step', ts.step === 'wallet');
     await js('window.__petTour.skip()'); await adv(0.3);
     ts = await tourSt();
-    expect('skipping the wallet reaches the end', ts.step === 'done');
+    expect('skipping the wallet skips the test buy too and shows the reactions', ts.step === 'reactions');
+    await sleep(400); await shot('26b-tour-reactions.png');
+    await js("document.querySelector('#tour [data-demo=profit]').click()"); await adv(0.45);
+    let ir2 = await info();
+    expect('the profit demo makes her cheer', ir2.state === 'cheer');
+    expect('and she really jumps', await js('window.__pet.bob / window.__petModel().height') > 0.08);
+    await adv(3);
+    await js("document.querySelector('#tour [data-demo=loss]').click()"); await adv(1.0);
+    ir2 = await info();
+    expect('the loss demo makes her sad', ir2.state === 'comfort');
+    await adv(4.5);
+    await js('window.__petTour.next()'); await adv(0.3);
+    ts = await tourSt();
+    expect('next after the reactions reaches the end', ts.step === 'done');
     await js('window.__petTour.next()'); await adv(0.3);
     ts = await tourSt();
     expect('the tour closes and is remembered', !ts.active && !ts.visible && settings.tourDone === true && settings.userName === 'Alex');
@@ -524,9 +537,20 @@ async function runSelfTest() {
     expect('reset clears the name and settings', settings.userName === '' && settings.tourDone === false && settings.bust === defaultSettings().bust);
     expect('and starts the tour over', ts.active && ts.step === 'name');
     await js("window.__petTour.name('Alex')"); await adv(0.2);   // leave the name in place for the rest of the run
-    await js('window.__petTour.skip(); window.__petTour.skip(); window.__petTour.next(); window.__petTour.skip(); window.__petTour.next()'); await adv(0.3);
+    await js('window.__petTour.skip(); window.__petTour.skip(); window.__petTour.next()'); await adv(0.3);
+    ts = await tourSt();
+    expect('the wallet step waits for the relay to say Live', ts.step === 'wallet');
+    await js("window.__petRelayMsg({ type: 'hello', wallets: ['w'], positions: [], firehose: true })"); await adv(0.6);
+    ts = await tourSt();
+    expect('a Live relay completes the wallet step and asks for a test buy', ts.step === 'testbuy');
+    await js("window.__petRelayMsg({ type: 'trade', side: 'buy', wallet: 'w', mint: 'TestBuyMint111111111111111111111111111111111', symbol: 'TEST', quote: 'SOL', amount: 0.05, tokens: 1000, remainingTokens: 1000, remainingCost: 0.05 })"); await adv(0.6);
+    ts = await tourSt();
+    expect('the first real trade completes the test buy', ts.step === 'reactions');
+    await js('window.__petTour.next(); window.__petTour.next()'); await adv(0.3);
     ts = await tourSt();
     expect('the tour can be stepped through by button', !ts.active);
+    await js("window.__petRelayMsg({ type: 'trade', side: 'sell', wallet: 'w', mint: 'TestBuyMint111111111111111111111111111111111', symbol: 'TEST', quote: 'SOL', amount: 0.05, tokens: 1000, pnl: null, pnlPct: null, remainingTokens: 0, remainingCost: 0 })"); await adv(1);
+    await js('window.__petPanel(false)'); await adv(6);   // let the reactions settle before the panel section
     await js('window.__petPanel(false)'); await adv(0.3);
 
     // ---- settings panel + trade reactions with speech bubble

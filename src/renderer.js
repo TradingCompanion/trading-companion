@@ -445,7 +445,6 @@ function walletsList() { return ((cfg && cfg.wallets) || '').split(/[\s,]+/).fil
 function connectRelay() {
   if (!cfg) return;
   const wallets = walletsList();
-  if (wallets.length) tourFlag('wallet');
   if (!wallets.length) { relayStatus = 'err'; relayInfo = 'Enter a wallet address first.'; refreshRelayStatus(); return; }
   disconnectRelay(true);
   let url;
@@ -540,6 +539,7 @@ function handleRelay(m) {
     relayInfo = `Live · ${n} wallet${n > 1 ? 's' : ''}, ${p} open position${p === 1 ? '' : 's'}${m.firehose ? '' : ' · firehose down'}`;
     refreshRelayStatus();
     sound('connect');
+    tourFlag('wallet');
     say(`Connected! Watching ${n} wallet${n > 1 ? 's' : ''}~`);
   } else if (m.type === 'status') {
     if (m.heartbeat) { relayHeartbeats = true; return; } // periodic keep-alive, nothing changed
@@ -559,6 +559,7 @@ function handleRelay(m) {
     if (!m.mint) return;
     relayTrades++; relayLastTradeAt = Date.now(); refreshRelayStatus();
     trackTrade(m);
+    tourFlag('trade');
     reactToTrade(m);
   } else if (m.type === 'error') {
     relayStatus = 'err'; relayInfo = str(m.message, 200) || 'The relay refused the connection.'; refreshRelayStatus();
@@ -887,19 +888,23 @@ const tourEl = document.getElementById('tour');
 const TOUR = [
   { key: 'name', eyebrow: 'Welcome', title: "Hi! I'm Yui", body: "I'll live down here on your taskbar and react to your trades. First — what should I call you?",
     input: true, cta: 'Nice to meet you', say: () => 'Hi! What should I call you?' },
-  { key: 'click', eyebrow: 'Step 1 of 5', title: 'Click me once', body: 'That opens my settings. Click me again to put them away, or press Escape.',
+  { key: 'click', eyebrow: 'Step 1 of 7', title: 'Click me once', body: 'That opens my settings. Click me again to put them away, or press Escape.',
     wait: 'waiting for a click', flag: 'panel', skip: 'Skip', say: (y) => `Click me${y ? ', ' + y : ''}~` },
-  { key: 'throw', eyebrow: 'Step 2 of 5', title: 'Pick me up', body: 'Grab me anywhere and drag. Let go while moving and I fly. I land on my feet. Mostly.',
+  { key: 'throw', eyebrow: 'Step 2 of 7', title: 'Pick me up', body: 'Grab me anywhere and drag. Let go while moving and I fly. I land on my feet. Mostly.',
     wait: 'waiting for a throw', flag: 'throw', skip: 'Skip', say: (y) => `Throw me${y ? ', ' + y : ''}! I can take it~` },
-  { key: 'look', eyebrow: 'Step 3 of 5', title: 'Dress me up', body: 'The Look tab: outfit, hair, the shape of me. Everything applies live and is remembered.',
+  { key: 'look', eyebrow: 'Step 3 of 7', title: 'Dress me up', body: 'The Look tab: outfit, hair, the shape of me. Everything applies live and is remembered.',
     highlight: 'look', flag: 'look', cta: 'Next', say: () => 'Make me cute~' },
-  { key: 'wallet', eyebrow: 'Step 4 of 5', title: 'Show me your wallet', body: "The Wallet tab: paste the public address you buy from and I react to every buy and sell. I only read it — I never ask you to sign anything.",
-    highlight: 'wallet', flag: 'wallet', skip: 'Later', say: () => 'Whose bags am I watching?' },
-  { key: 'done', eyebrow: 'That is everything', title: (y) => `Have fun${y ? ', ' + y : ''}!`, body: 'I glow when you win and bruise when you lose. The Her tab replays this or resets me if you ever want a fresh start.',
+  { key: 'wallet', eyebrow: 'Step 4 of 7', title: 'Connect your wallet', body: "In the Wallet tab: paste the public address you buy from, then press Connect. When it says Live, I can see your trades. I only read the address — I never ask you to sign anything.",
+    highlight: 'wallet', wait: 'waiting for Live', flag: 'wallet', skip: 'Later', say: () => 'Whose bags am I watching?' },
+  { key: 'testbuy', eyebrow: 'Step 5 of 7', title: 'Make a small test buy', body: "Any coin, any size — I react the moment it lands, and my board shows the position. Sell it afterwards to see the other side.",
+    wait: 'waiting for your trade', flag: 'trade', skip: 'Skip', needsRelay: true, say: (y) => `Go on${y ? ' ' + y : ''}, I'm watching~` },
+  { key: 'reactions', eyebrow: 'Step 6 of 7', title: 'What I do', body: "Try each one. These are pretend — nothing is sent anywhere. I jump when you win, bruise when you lose, and the marks heal over a few minutes.",
+    demo: true, cta: 'Next', say: () => 'Press one!' },
+  { key: 'done', eyebrow: 'That is everything', title: (y) => `Have fun${y ? ', ' + y : ''}!`, body: "I'll be down here on your taskbar. The Her tab replays this or resets me if you ever want a fresh start.",
     cta: "Let's go", say: (y) => `Good luck out there${y ? ', ' + y : ''}~` },
 ];
 let tourActive = false, tourStep = -1, tourStepAt = 0;
-const tourFlags = { panel: false, throw: false, look: false, wallet: false };
+const tourFlags = { panel: false, throw: false, look: false, wallet: false, trade: false };
 function tourFlag(k) { if (tourActive && k in tourFlags) tourFlags[k] = true; }
 function startTour() {
   if (!tourEl || !model) return;
@@ -920,12 +925,14 @@ function tourHighlight(tab) {
 }
 function tourGo(i) {
   if (i >= TOUR.length) { endTour(); return; }
+  if (TOUR[i].needsRelay && relayStatus !== 'ok') { tourGo(i + 1); return; }   // no wallet connected: nothing to wait for
   tourStep = i; tourStepAt = T;
   const st = TOUR[i], y = who();
   const title = typeof st.title === 'function' ? st.title(y) : st.title;
   tourEl.className = '';
   tourEl.innerHTML = `<span class="tail"></span><div class="eyebrow">${esc(st.eyebrow)}</div><h3>${esc(title)}</h3><p>${esc(st.body)}</p>`
     + (st.input ? `<input type="text" id="tourName" placeholder="Alex" maxlength="24" spellcheck="false" value="${esc(y)}">` : '')
+    + (st.demo ? `<div class="demo"><button class="ghost" data-demo="profit">Profit</button><button class="ghost" data-demo="loss">Loss</button><button class="ghost" data-demo="buy">Buy</button></div>` : '')
     + `<div class="actions">`
     + (st.cta ? `<button id="tourNext">${esc(st.cta)}</button>` : `<span class="wait">${esc(st.wait)}</span>`)
     + (st.skip ? `<button class="ghost" id="tourSkip">${esc(st.skip)}</button>` : '')
@@ -939,12 +946,20 @@ function tourGo(i) {
   };
   if (next) next.onclick = advance;
   if (skip) skip.onclick = () => tourGo(i + 1);
+  for (const b of tourEl.querySelectorAll('[data-demo]')) b.onclick = () => tourDemo(b.dataset.demo);
+  if (!st.highlight && panelOpen) closePanel();   // the test buy and the demos want her in the clear
   if (input) { input.onkeydown = (e) => { if (e.key === 'Enter') advance(); }; setTimeout(() => input.focus(), 50); }
   // she points at the tab the step is about, with it open in front of the user
   if (st.highlight) { openPanel(st.highlight); }
   tourHighlight(st.highlight || null);
   if (st.say) say(st.say(y), 5);
   if (st.key === 'done') setState('wave');
+}
+// the pretend trades behind the demo buttons: they go through reactToTrade only, never the book
+function tourDemo(kind) {
+  if (kind === 'profit') reactToTrade({ side: 'sell', symbol: 'PEPE', quote: 'SOL', amount: 1.42, pnl: 0.61, pnlPct: 75 });
+  else if (kind === 'loss') reactToTrade({ side: 'sell', symbol: 'WOJAK', quote: 'SOL', amount: 0.31, pnl: -0.24, pnlPct: -44 });
+  else reactToTrade({ side: 'buy', symbol: 'MOON', quote: 'SOL', amount: 0.5 });
 }
 // steps that wait for the user move on the moment it happens
 function tourTick() {
@@ -1718,42 +1733,52 @@ function updateState(dt) {
   }
 
   else if (st === 'cheer') {
-    // profit: arms up, little hops, big smile
+    // profit: two big excited jumps, knees tucked in the air, arms thrown up, mouth open
     groundStep(dt);
-    defaultRate = 14;
-    const w = envelope(pet.t, 2.6, 0.3);
-    const hop = pet.t < 1.9 ? Math.abs(Math.sin(pet.t * 9)) : 0;
-    mixPose('leftUpperArm', -0.2, 0, 1.45 + 0.15 * Math.sin(pet.t * 9), w);
-    mixPose('rightUpperArm', -0.2, 0, -1.45 - 0.15 * Math.sin(pet.t * 9 + 1), w);
-    mixPose('leftLowerArm', 0, 0, 0.35, w); mixPose('rightLowerArm', 0, 0, -0.35, w);
+    defaultRate = 16;
+    const w = envelope(pet.t, 2.8, 0.25);
+    const ph = pet.t * 4.6;                                   // ~0.7 s per jump
+    const air = pet.t < 2.0 ? Math.max(0, Math.sin(ph)) : 0;  // up in the air
+    const dip = pet.t < 2.0 ? Math.max(0, -Math.sin(ph)) * 0.6 : 0;   // the crouch between jumps
+    bobTarget = 0.16 * model.height * air * w;
+    crouchTarget = -0.035 * model.height * dip * w;
+    for (const s of ['left', 'right']) {
+      setPose(s + 'UpperLeg', -0.55 * air * w - 0.18 * dip * w, 0, 0);   // knees up in the air, bent in the crouch
+      setPose(s + 'LowerLeg', 1.05 * air * w + 0.35 * dip * w, 0, 0);
+      setPose(s + 'Foot', 0.35 * air * w, 0, 0);
+    }
+    mixPose('leftUpperArm', -0.3, 0, 1.55 + 0.2 * Math.sin(ph), w);
+    mixPose('rightUpperArm', -0.3, 0, -1.55 - 0.2 * Math.sin(ph + 1), w);
+    mixPose('leftLowerArm', 0, 0, 0.3, w); mixPose('rightLowerArm', 0, 0, -0.3, w);
     mixPose('leftHand', 0, 0, 0.2, w); mixPose('rightHand', 0, 0, -0.2, w);
-    addPose('head', -0.12 * w, 0, 0.18 * Math.sin(pet.t * 4.5) * w);
-    addPose('spine', -0.06 * w, 0, 0.03 * Math.sin(pet.t * 4.5) * w);
-    setPose('leftLowerLeg', 0.25 * hop * w, 0, 0); setPose('rightLowerLeg', 0.25 * hop * w, 0, 0);
-    bobTarget = 0.05 * model.height * hop * w;
-    expr('happy', w);
-    headLook(0.4);
-    if (pet.t > 2.6) setState('idle');
+    addPose('head', -0.14 * w, 0, 0.2 * Math.sin(pet.t * 4.5) * w);
+    addPose('spine', -0.08 * w + 0.1 * dip * w, 0, 0.03 * Math.sin(pet.t * 4.5) * w);
+    expr('happy', w); expr('aa', 0.45 * air * w);
+    headLook(0.3);
+    if (pet.t > 2.8) setState('idle');
   }
 
   else if (st === 'comfort') {
-    // loss: leans in, hands together in front, soft worried face, slow nod
+    // loss: she is sad. Head hung, shoulders in, hands together low, a couple of sobs, and the
+    // face stays sad for the whole of it — she does not cheer up on her own.
     groundStep(dt);
-    defaultRate = 6;
-    const w = envelope(pet.t, 4.2, 0.6);
-    mixPose('leftUpperArm', -0.75, 0.25, -0.95, w);
-    mixPose('rightUpperArm', -0.75, -0.25, 0.95, w);
-    mixPose('leftLowerArm', 0.15, -1.15, -0.25, w);
-    mixPose('rightLowerArm', 0.15, 1.15, 0.25, w);
-    mixPose('leftHand', 0.3, 0, -0.35, w); mixPose('rightHand', 0.3, 0, 0.35, w);
-    addPose('spine', 0.12 * w, 0, 0);
-    addPose('chest', 0.05 * w, 0, 0);
-    addPose('head', (0.08 + 0.06 * Math.sin(pet.t * 2.2)) * w, 0, 0.22 * w * (pet.comfortSide || 1));
-    if (pet.t < 1.6) expr('sad', 0.45 * w); else expr('relaxed', 0.5 * w);
-    if (pet.t > 2.2) expr('happy', 0.25 * w);
-    if (!pet.cheeredUp && pet.t > 1.9) { pet.cheeredUp = true; sound('cheerUp', { volume: 0.9 }); }
-    headLook(1);
-    if (pet.t > 4.2) setState('idle');
+    defaultRate = 5;
+    const w = envelope(pet.t, 4.6, 0.7);
+    mixPose('leftUpperArm', -0.35, 0.3, -0.7, w);
+    mixPose('rightUpperArm', -0.35, -0.3, 0.7, w);
+    mixPose('leftLowerArm', 0.2, -0.95, -0.15, w);
+    mixPose('rightLowerArm', 0.2, 0.95, 0.15, w);
+    mixPose('leftHand', 0.35, 0, -0.3, w); mixPose('rightHand', 0.35, 0, 0.3, w);
+    mixPose('leftShoulder', 0.12, 0, 0.16, w); mixPose('rightShoulder', 0.12, 0, -0.16, w);   // slumped
+    // two sobs, a short shoulder shudder each
+    const sob = (pet.t > 1.2 && pet.t < 1.7) || (pet.t > 2.6 && pet.t < 3.1) ? Math.sin(pet.t * 28) * 0.03 : 0;
+    addPose('spine', 0.2 * w, 0, sob);
+    addPose('chest', 0.1 * w + sob, 0, 0);
+    addPose('head', 0.42 * w, 0, 0.12 * w * (pet.comfortSide || 1));
+    expr('sad', 0.75 * w); eyesClosed = Math.max(eyesClosed, 0.35 * w);
+    if (!pet.cheeredUp && pet.t > 3.4) { pet.cheeredUp = true; sound('cheerUp', { volume: 0.8 }); }   // a small "ganbatte" to herself at the end
+    headLook(0.3);
+    if (pet.t > 4.6) setState('idle');
   }
 
   else if (st === 'notice') {
