@@ -20,3 +20,10 @@ web/downloads/
 .elevenlabs.key
 elevenlabs.local.key
 tools/streamer-voice/cache/
+
+# relay runtime config and token: live on the server only, never committed
+server/.env
+server/.env.*
+server/.token
+server/*.bak*
+relay-token.txt
