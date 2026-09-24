@@ -159,11 +159,11 @@ The relay is a plain WebSocket and the renderer opens it itself, so the website 
 same feed the desktop app does — the address field on the page and the one in her panel are the
 same setting. The scheme follows the page: `ws://` from http, `wss://` from https.
 
-**A page served over https can only open `wss://`.** The public relay is plain `ws://` today, so
-the wallet feed on the live site needs TLS in front of the relay (a reverse proxy terminating
-`wss://relay.tradingcompanion.fun` is enough; point `YUI_CONFIG.relay` at it). Until then it works
-when the site is served over http — `npm run web` — and her panel says exactly why rather than
-showing "connection failed".
+**A page served over https can only open `wss://`.** The live site is served over https, so it
+pins `YUI_CONFIG.relay` at `wss://relay.tradingcompanion.fun` — Caddy terminates TLS there and
+hands the socket to the relay on 9998. A local preview over http — `npm run web` — talks to the
+relay directly over `ws://`, and if a page ever ends up on https with a plain `ws://` relay, her
+panel says exactly why rather than showing "connection failed".
 
 ```bash
 npm run build:web     # bundle the renderer, copy her model and voice, generate pet.css
@@ -193,7 +193,7 @@ What the container does, and why:
 | --- | --- |
 | **a shadow root** | The site's stylesheet cannot restyle her panel (Tailwind resets every `button`), and hers cannot touch the site. The bundle is built with `document` pointed at a stand-in (`__YUI_DOC`) that answers `getElementById` and `body` from her shadow root, so the renderer never learned about it. |
 | **chrome.storage** | One setup — wallet, look, size — that follows the trader to every site and survives the site clearing its own storage. `yui-boot.js` takes a storage object from `YUI_CONFIG`. |
-| **the background worker** | Every terminal is https and an https page may only open `wss://`; the relay is `ws://`. Her socket is opened by the extension's service worker instead (`WebSocket` is pointed at `__YUI_WS`, a look-alike over a runtime port). One socket per relay URL is shared by every tab watching the same wallets, so a trader with six terminals open does not hit the relay's per-address cap; a tab joining late is handed the last `hello` so its positions are seeded too. The extension points at `wss://relay.tradingcompanion.fun` (Caddy terminates TLS on the relay box); until that name resolves the worker falls back to the plain address the app uses. |
+| **the background worker** | Every terminal is https and an https page may only open `wss://`. Her socket is opened by the extension's service worker instead (`WebSocket` is pointed at `__YUI_WS`, a look-alike over a runtime port). One socket per relay URL is shared by every tab watching the same wallets, so a trader with six terminals open does not hit the relay's per-address cap; a tab joining late is handed the last `hello` so its positions are seeded too. The extension points at `wss://relay.tradingcompanion.fun` (Caddy terminates TLS on the relay box, live since 2026-09-24); if that name ever fails to resolve before the socket opens, the worker falls back to the plain address the app uses. |
 | **a frame cap** | `requestAnimationFrame` is pointed at `__YUI_RAF`, which can hold her to 30 fps (the popup's switch) and stops her frames entirely while she is switched off for a site. |
 | **the popup** | The wallet field, a per-site on/off switch, the frame cap, and what she is doing on the current tab. |
 
