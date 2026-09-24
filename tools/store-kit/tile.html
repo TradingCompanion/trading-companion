@@ -1,0 +1,38 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+@font-face { font-family: Outfit; src: url('../../web/fonts/Outfit.woff2') format('woff2'); font-weight: 100 900; }
+@font-face { font-family: Rubik; src: url('../../web/fonts/Rubik.woff2') format('woff2'); font-weight: 300 900; }
+html, body { margin: 0; background: #0b0614; }
+.tile { position: relative; overflow: hidden; font-family: Outfit, Rubik, sans-serif; color: #fff;
+  background: radial-gradient(120% 90% at 78% 40%, #3a1a6e 0%, #1a0b33 45%, #0b0614 100%); }
+.tile::before { content: ''; position: absolute; inset: 0; background:
+  radial-gradient(40% 60% at 80% 55%, rgba(226,110,255,.28), transparent 70%),
+  radial-gradient(30% 40% at 20% 100%, rgba(120,80,255,.22), transparent 70%); }
+.grid { position: absolute; inset: 0; opacity: .12; background-image: linear-gradient(rgba(255,255,255,.18) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.18) 1px, transparent 1px); background-size: 28px 28px; -webkit-mask-image: linear-gradient(90deg, rgba(0,0,0,.9), transparent 70%); mask-image: linear-gradient(90deg, rgba(0,0,0,.9), transparent 70%); }
+.girl { position: absolute; bottom: 0; right: 0; height: 100%; object-fit: contain; object-position: right bottom; filter: drop-shadow(0 18px 30px rgba(226,110,255,.35)); }
+.copy { position: absolute; left: 0; top: 0; bottom: 0; display: flex; flex-direction: column; justify-content: center; z-index: 2; }
+.brand { display: flex; align-items: center; gap: 14px; }
+.brand img { border-radius: 50%; box-shadow: 0 0 0 3px rgba(255,255,255,.12), 0 8px 24px rgba(0,0,0,.5); }
+.name { font-weight: 800; letter-spacing: -.02em; line-height: .95; background: linear-gradient(90deg, #fff, #e8c7ff); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.sub { font-weight: 500; color: #d9c6ff; letter-spacing: .12em; text-transform: uppercase; }
+.tag { color: rgba(255,255,255,.82); font-family: Rubik, sans-serif; font-weight: 400; line-height: 1.32; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font-family: Rubik, sans-serif; font-weight: 500; color: #f3e9ff; background: rgba(255,255,255,.09); border: 1px solid rgba(255,255,255,.16); border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
+.s .tile { width: 440px; height: 280px; } .s .girl { height: 118%; right: -30px; bottom: -10px; } .s .copy { left: 26px; width: 250px; }
+.s .brand img { width: 46px; height: 46px; } .s .name { font-size: 46px; } .s .sub { font-size: 11px; margin-top: 8px; }
+.s .tag { font-size: 14px; margin-top: 12px; width: 230px; } .s .chips { display: none; }
+.m .tile { width: 1400px; height: 560px; } .m .girl { height: 128%; right: 60px; bottom: -40px; } .m .copy { left: 96px; width: 720px; }
+.m .brand img { width: 84px; height: 84px; } .m .name { font-size: 112px; } .m .sub { font-size: 20px; margin-top: 10px; }
+.m .tag { font-size: 26px; margin-top: 22px; width: 620px; } .m .chips { margin-top: 26px; } .m .chip { font-size: 15px; padding: 5px 14px; }
+.l .tile { width: 920px; height: 680px; } .l .girl { height: 112%; right: -20px; bottom: -30px; } .l .copy { left: 60px; width: 470px; }
+.l .brand img { width: 70px; height: 70px; } .l .name { font-size: 84px; } .l .sub { font-size: 16px; margin-top: 8px; }
+.l .tag { font-size: 22px; margin-top: 18px; width: 420px; } .l .chips { margin-top: 22px; width: 420px; } .l .chip { font-size: 13px; }
+</style></head><body class="SIZECLASS">
+<div class="tile"><div class="grid"></div>
+  <img class="girl" src="../../release/store-assets/extra/yui-transparent-win.png">
+  <div class="copy">
+    <div class="brand"><img src="../../branding/yui-head.png"><div class="name">Yui</div></div>
+    <div class="sub">Trading Companion</div>
+    <div class="tag">She lives on your terminal and reacts to every trade — cheers your wins, feels your losses, holds your live PnL.</div>
+    <div class="chips"><span class="chip">Live PnL board</span><span class="chip">Reacts to every trade</span><span class="chip">Read-only</span></div>
+  </div>
+</div></body></html>

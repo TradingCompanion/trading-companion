@@ -93,7 +93,7 @@ const manifest = {
   short_name: 'Yui',
   version: pkg.version,
   // the store caps this at 132 characters
-  description: 'An anime companion on your trading terminal who reacts to your pump.fun trades: cheers wins, feels losses, holds your PnL.',
+  description: 'An anime companion on your trading terminal who reacts to your trades: cheers wins, feels losses, holds your live PnL.',
   minimum_chrome_version: '116',
   icons: { 16: 'icons/icon16.png', 32: 'icons/icon32.png', 48: 'icons/icon48.png', 128: 'icons/icon128.png' },
   action: { default_title: 'Yui', default_popup: 'popup.html', default_icon: { 16: 'icons/icon16.png', 32: 'icons/icon32.png' } },
