@@ -20,8 +20,11 @@
 // The chart lesson needs a wide screen (Axiom's own layout does), so a phone skips it and meets
 // her on the site with her tutorial instead. Decided before the first paint, like the glass.
 window.YUI_PHONE = window.innerWidth <= 900;
-if (!window.YUI_PHONE) document.documentElement.classList.add('yui-starter');
-document.documentElement.classList.add('yui-intro');   // every visit gets her intro
+// A known visitor (has been through the trailer or given her a name) never sees the trailer or the
+// glass again: the site opens straight away and she greets them with her tour.
+try { window.YUI_KNOWN = !!localStorage.getItem('yui.web.intro.v1'); } catch (e) { window.YUI_KNOWN = false; }
+if (!window.YUI_PHONE && !window.YUI_KNOWN) document.documentElement.classList.add('yui-starter');
+if (!window.YUI_KNOWN) document.documentElement.classList.add('yui-intro');
 </script>
 <!-- ============================================================================================
      tradingcompanion.fun — the landing page.
@@ -63,7 +66,7 @@ window.YUI_CONFIG = {
   // over and she is back at her spot, until she has been through it; the ❔ replays it.
   // The starter: the terminal first, replaying a real launch frozen just before it ran, one
   // guided paper trade with her beside it, then the site. scripts/tape-from-db.js makes tapes.
-  starter: window.YUI_PHONE ? null : { tape: 'trade/tapes/25YZyQ4p8wRVkwPtyvQ4VWPNdHMStEXe5h84FVAAqaWR.json' },
+  starter: (window.YUI_PHONE || window.YUI_KNOWN) ? null : { tape: 'trade/tapes/25YZyQ4p8wRVkwPtyvQ4VWPNdHMStEXe5h84FVAAqaWR.json' },
   intro: true,
   introSpot: 0.16,
   // On a first visit she stands at her spot and says hello the moment she is on screen — at her

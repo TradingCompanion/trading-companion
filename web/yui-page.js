@@ -70,9 +70,8 @@
   function introDone() { try { return !!localStorage.getItem(INTRO); } catch (e) { return false; } }
   // The glass is in the page's own markup and shown by a one-line script in <head> before the
   // first paint (html.yui-intro), so a first visit never shows a frame of the bare page.
-  // 2026-09-24: every visit gets the intro, returning visitors too (the key now only unlocks the
-  // starter's Skip button).
-  var intro = CFG.intro ? document.getElementById('yui-intro') : null;
+  // A known visitor skips the trailer and the glass; the tour still greets them (below).
+  var intro = CFG.intro && !introDone() ? document.getElementById('yui-intro') : null;
   if (intro && !document.documentElement.classList.contains('yui-intro')) document.documentElement.classList.add('yui-intro');
   if (!intro) { var stale = document.getElementById('yui-intro'); if (stale) stale.remove(); }
   if (intro) {

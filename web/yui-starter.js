@@ -30,7 +30,7 @@
   // captured page, which is what broke when it was tried.
   var PAGE_W = 1600, BAND_H = 592;
   var introDone = false; try { introDone = !!localStorage.getItem('yui.web.intro.v1'); } catch (e) {}
-  skip.hidden = !introDone;                      // the first time through, there is no way around it
+  skip.hidden = false;                           // always skippable: nobody is ever stuck in it
 
   var done = false, frame = null, tape = null, step = 0, timers = [];
   function later(fn, ms) { timers.push(setTimeout(fn, ms)); }
@@ -40,6 +40,8 @@
   var keepPlaced = 0;
   function end() {
     if (done) return; done = true;
+    // seen once is enough: from now on this browser is a known visitor and never gets the trailer
+    try { if (!localStorage.getItem('yui.web.intro.v1')) localStorage.setItem('yui.web.intro.v1', String(Date.now())); } catch (e) {}
     timers.forEach(clearTimeout);
     timers.forEach(clearInterval);
     clearInterval(keepPlaced);
