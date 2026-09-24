@@ -288,6 +288,11 @@ function devBridge() {
     connect: () => { Y().connect(); },
     status: () => status(),
     socketPath: () => window.__yuiSocketPath || null,
+    // hand her a relay frame / open her panel — for screenshots and tests without a live wallet
+    relayMsg: (m) => { window.__petRelayMsg(typeof m === 'string' ? JSON.parse(m) : m); },
+    openPanel: (tab) => { Y().openPanel(tab || 'wallet'); },
+    pet: (patch) => { Object.assign(window.__pet, patch || {}); },
+    sign: () => window.__petSign(),
     storageGet: (key) => new Promise((r) => chrome.storage.local.get(key, (v) => r(v ? v[key] : null))),
     storageSet: (obj) => new Promise((r) => chrome.storage.local.set(obj, () => r(true))),
     proxyCheck: () => !!shadow && window.__YUI_DOC.getElementById('panel') === shadow.getElementById('panel') && document.getElementById('panel') !== shadow.getElementById('panel'),
