@@ -23,6 +23,9 @@ const server = http.createServer((req, res) => {
   const url = decodeURIComponent(req.url.split('?')[0]);
   let file = path.join(ROOT, url === '/' ? INDEX : url);
   if (!file.startsWith(ROOT)) { res.writeHead(403).end(); return; }
+  // Clean URLs: /privacy and /docs answer with privacy.html / docs.html (the store listing links
+  // the policy without an extension).
+  if (!path.extname(file) && url !== '/' && fs.existsSync(file + '.html')) file += '.html';
   fs.stat(file, (err, st) => {
     if (err || !st.isFile()) { res.writeHead(404, { 'Content-Type': 'text/plain' }).end('not found: ' + url); return; }
     const ext = path.extname(file).toLowerCase();
