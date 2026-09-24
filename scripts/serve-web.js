@@ -4,8 +4,14 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-const ROOT = path.resolve(__dirname, '..', 'web');
+const ROOT = process.env.WEB_ROOT || path.resolve(__dirname, '..', 'web');
 const PORT = Number(process.env.PORT || 4173);
+// Which page answers at /: the landing page by default, or `INDEX=app.html` for the app-in-a-tab
+// build that runs on the relay box (pm2 `yui-web`).
+const INDEX = process.env.INDEX || 'index.html';
+// Where to listen. The app-in-a-tab preview is reachable directly (0.0.0.0:8820, ufw open); the
+// real site sits behind Caddy and binds loopback so nothing bypasses TLS and the access log.
+const HOST = process.env.HOST || '0.0.0.0';
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.vrm': 'application/octet-stream',
@@ -15,12 +21,25 @@ const TYPES = {
 
 const server = http.createServer((req, res) => {
   const url = decodeURIComponent(req.url.split('?')[0]);
-  let file = path.join(ROOT, url === '/' ? 'index.html' : url);
+  let file = path.join(ROOT, url === '/' ? INDEX : url);
   if (!file.startsWith(ROOT)) { res.writeHead(403).end(); return; }
   fs.stat(file, (err, st) => {
     if (err || !st.isFile()) { res.writeHead(404, { 'Content-Type': 'text/plain' }).end('not found: ' + url); return; }
-    res.writeHead(200, { 'Content-Type': TYPES[path.extname(file).toLowerCase()] || 'application/octet-stream', 'Content-Length': st.size });
-    fs.createReadStream(file).pipe(res);
+    const ext = path.extname(file).toLowerCase();
+    // A rebuild must reach an open tab on its next refresh, so the page and its scripts are always
+    // revalidated; her body and voice change rarely and are big, so those may be kept for a day.
+    const cache = /^\.(html|js|css)$/.test(ext) ? 'no-cache' : 'public, max-age=86400';
+    const headers = { 'Content-Type': TYPES[ext] || 'application/octet-stream', 'Cache-Control': cache };
+    // Her body has a pre-compressed twin (build-web.js): a fifth less to download, at no CPU cost here.
+    const gz = file + '.gz';
+    const wantsGz = /\bgzip\b/.test(req.headers['accept-encoding'] || '');
+    fs.stat(gz, (e2, sz) => {
+      let src = file, size = st.size;
+      if (!e2 && sz.isFile() && wantsGz) { src = gz; size = sz.size; headers['Content-Encoding'] = 'gzip'; headers['Vary'] = 'Accept-Encoding'; headers['X-Uncompressed-Size'] = st.size; }
+      headers['Content-Length'] = size;
+      res.writeHead(200, headers);
+      fs.createReadStream(src).pipe(res);
+    });
   });
 });
 
@@ -44,6 +63,6 @@ function next(busy) {
   console.log('port ' + busy + ' is in use, trying ' + p + '…');
   listen(p);
 }
-function listen(p) { server.__port = p; server.listen(p); }
-server.on('listening', () => console.log('web preview on http://localhost:' + (server.__port || PORT)));
+function listen(p) { server.__port = p; server.listen(p, HOST); }
+server.on('listening', () => console.log('serving web/ (' + INDEX + ') on http://' + HOST + ':' + (server.__port || PORT)));
 listen(PORT);

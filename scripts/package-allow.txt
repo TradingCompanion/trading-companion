@@ -10,12 +10,17 @@ ws://host
 wss://your-relay.example:9998
 # The public relay. Deliberately shipped: it takes no token and runs on rate limits instead,
 # so that a download works with nothing but a wallet address pasted in.
-relay.trenchwaifu.fun
-ws://relay.trenchwaifu.fun:9998
+relay.tradingcompanion.fun
+ws://relay.tradingcompanion.fun:9998
 192.248.179.126
 ws://192.248.179.126:9998
-wss://relay.trenchwaifu.fun
-wss://relay.trenchwaifu.fun:9998
+wss://relay.tradingcompanion.fun
+wss://relay.tradingcompanion.fun:9998
+# tradingcompanion.fun: the same relay under the project's own domain (the extension uses this one)
+relay.tradingcompanion.fun
+wss://relay.tradingcompanion.fun
+ws://relay.tradingcompanion.fun:9998
+tradingcompanion.fun
 
 # self-test fixtures in main.js: a placeholder mint and a wallet-shaped string for the paste check
 TestBuyMint111111111111111111111111111111111

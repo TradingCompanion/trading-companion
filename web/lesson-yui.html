@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Yui — lesson</title>
+<!-- ============================================================================================
+     The lesson's own Yui.
+
+     The starter's overlay puts this page in a transparent iframe over the terminal, so the girl
+     who teaches the lesson is a *separate copy* of her: her own settings, her own book, her own
+     canvas. Nothing she does here touches the Yui who lives on the website — that one is not even
+     started until the lesson is over. The parent drives this one directly (same origin):
+     __petWalkTo, __petPointAt, __petStay, __petRelayMsg, YuiWeb.say / command.
+     ============================================================================================ -->
+<script>
+window.YUI_CONFIG = {
+  relay: '', relayHost: '', relayPort: 9998,
+  lesson: true,                    // she teaches; she does not greet the day or nudge about sells
+  // her own storage, so the lesson never writes over what the site remembers about the visitor
+  storage: (function () { var m = {}; return { get: function (k) { return m[k]; }, set: function (k, v) { m[k] = v; }, remove: function (k) { delete m[k]; } }; })(),
+  defaults: { tourDone: true, muted: false, autoConnect: false, userName: '' }
+};
+</script>
+<style>
+  html,body{margin:0;height:100%;background:transparent;overflow:hidden}
+  #loading,#panel,#tour,#ring{display:none!important}
+  #bubble{z-index:45}
+</style>
+<link rel="stylesheet" href="pet.css">
+</head>
+<body>
+<div id="loading" hidden></div>
+<div id="bubble"></div>
+<div id="tour" hidden></div>
+<div id="ring" hidden></div>
+<div id="panel" hidden></div>
+<script src="yui-defaults.js"></script>
+<script src="yui-sounds.js"></script>
+<script src="yui-boot.js"></script>
+<script src="yui-web.js"></script>
+<script>
+YuiWeb.start({ model: 'assets/yui.vrm', sounds: window.YUI_SOUNDS })
+  .then(function () { if (window.parent !== window) parent.postMessage({ yuiLesson: 'ready' }, location.origin); })
+  .catch(function (e) { console.error('[lesson-yui]', e); });
+</script>
+</body>
+</html>

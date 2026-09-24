@@ -14,7 +14,12 @@
     "package:check": "node scripts/package.js --check",
     "build:web": "node scripts/build-web.js",
     "web": "node scripts/build-web.js && node scripts/serve-web.js",
-    "stream-voice": "node tools/streamer-voice/server.js"
+    "stream-voice": "node tools/streamer-voice/server.js",
+    "test:web": "xvfb-run -a -s \"-screen 0 1600x900x24\" electron --no-sandbox --disable-gpu-sandbox --use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader scripts/test-web.js",
+    "build:ext": "node scripts/build-extension.js",
+    "test:ext": "xvfb-run -a -s \"-screen 0 1600x900x24\" electron --no-sandbox --disable-gpu-sandbox --use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader scripts/test-extension.js",
+    "test:web:tour": "xvfb-run -a -s \"-screen 0 1600x900x24\" electron --no-sandbox --disable-gpu-sandbox --use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader scripts/test-web-tour.js",
+    "test:web:page": "xvfb-run -a -s \"-screen 0 1600x900x24\" electron --no-sandbox --disable-gpu-sandbox --use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader scripts/test-web-page.js"
   },
   "build": {
     "appId": "fun.pump.yui",

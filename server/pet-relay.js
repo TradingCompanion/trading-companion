@@ -494,8 +494,14 @@ const wss = new WebSocket.Server({ server });
 
 const perIp = new Map();   // ip -> live session count
 function ipOf(req) {
+  // Port 9998 is reachable from the internet as well as through Caddy, so X-Forwarded-For is
+  // only believed when the connection itself came from the proxy on this machine. Taken from
+  // anyone, it is a header the client writes — and the per-IP cap below would be a formality.
+  const sock = (req.socket && req.socket.remoteAddress) || 'unknown';
+  const local = sock === '127.0.0.1' || sock === '::1' || sock === '::ffff:127.0.0.1';
+  if (!local) return sock;
   const fwd = (req.headers['x-forwarded-for'] || '').split(',')[0].trim();
-  return fwd || (req.socket && req.socket.remoteAddress) || 'unknown';
+  return fwd || sock;
 }
 wss.on('connection', async (ws, req) => {
   const url = new URL(req.url, 'http://localhost');

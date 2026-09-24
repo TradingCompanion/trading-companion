@@ -5,6 +5,8 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { VRMLoaderPlugin, VRMUtils, MToonMaterial } from '@pixiv/three-vrm';
 import { createVoice, PHRASES, MOODS } from './voice.js';
+import * as clips from './clips.js';
+import { VOICE_PACK } from './voice-pack.js';
 
 // ---------------------------------------------------------------- helpers
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -49,13 +51,22 @@ const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true,
 // idle cap pays for it several times over.
 // Capped in total, not just per factor: on a 4K screen at her largest size the buffer would
 // otherwise reach ~16 megapixels, which a weak integrated GPU would feel.
-const SUPERSAMPLE = 1.4;
-renderer.setPixelRatio(Math.min((window.devicePixelRatio || 1) * SUPERSAMPLE, 2.5));
+// In a browser tab she shares the GPU with the page — its compositor, its text, its effects —
+// and the tab may well be on a laptop's integrated GPU. The desktop app can afford to supersample
+// her; the web build renders at the display's own pixel density, which is still crisp at her size,
+// and caps her at 60 frames. The bridge marks the web build (window.pet.web).
+const WEB_BUILD = !!(window.pet && window.pet.web);
+const SUPERSAMPLE = WEB_BUILD ? 1.0 : 1.4;
+const PHONE = WEB_BUILD && Math.min(window.innerWidth, window.innerHeight) <= 900;
+renderer.setPixelRatio(Math.min((window.devicePixelRatio || 1) * SUPERSAMPLE, PHONE ? 1.5 : WEB_BUILD ? 2 : 2.5));
 renderer.setClearColor(0x000000, 0);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 
 const scene = new THREE.Scene();
-const FOV = 24;
+// The lens. 24° was a long lens: no perspective, so a jump toward the viewer or a turn read flat.
+// Wider = closer camera for the same framing = more depth; TILT lifts the camera above her chest
+// so the floor reads as a floor when she sits, lies down or jumps. window.__petLens(fov, tilt).
+let FOV = 24, TILT = 0;   // the original lens (the clip pack's 38/0.3 reverted 2026-09-24)
 const camera = new THREE.PerspectiveCamera(FOV, 1, 0.3, 60);
 let camDist = 8;
 
@@ -120,15 +131,33 @@ function layout() {
   groundY = -H / 2 / ppu + 1 / ppu;
   minX = -W / 2 / ppu + 0.45;
   maxX = W / 2 / ppu - 0.45;
-  pet.x = clamp(pet.x, minX, maxX);
+  // A window that has no size yet (a tab still being laid out, a hidden test window) would clamp
+  // her to a one-point range and lose where she was meant to stand; the resize that follows
+  // lays out again with the real size.
+  if (W > 1 && H > 1) pet.x = clamp(pet.x, minX, maxX);
   if (pet.onGround) pet.y = groundY;
   springResetPending = 2;
 }
 window.addEventListener('resize', layout);
 
 // screen <-> world on the z=0 plane (linear, since the camera never tilts)
-const toWorld = (sx, sy) => ({ x: (sx - W / 2) / ppu, y: (H / 2 - sy) / ppu });
-const toScreen = (wx, wy) => ({ x: wx * ppu + W / 2, y: H / 2 - wy * ppu });
+// She stands at a depth (pet.z, 0 = the front, negative = further back), so screen<->world goes
+// through the camera onto her plane instead of the flat z=0 mapping.
+const _ts = new THREE.Vector3(), _tw = new THREE.Vector3(), _td = new THREE.Vector3();
+const zBack = () => (model ? -1.3 * model.height : 0);
+const depthScale = () => (model ? camDist / (camDist - pet.z) : 1);   // how much smaller she looks back there
+const toScreen = (wx, wy) => {
+  if (!model) return { x: wx * ppu + W / 2, y: H / 2 - wy * ppu };
+  _ts.set(wx, wy, pet.z).project(camera);
+  return { x: canvasLeft + (_ts.x + 1) / 2 * CS, y: canvasTop + (1 - _ts.y) / 2 * CS };
+};
+const toWorld = (sx, sy) => {
+  if (!model) return { x: (sx - W / 2) / ppu, y: (H / 2 - sy) / ppu };
+  _tw.set(((sx - canvasLeft) / CS) * 2 - 1, 1 - ((sy - canvasTop) / CS) * 2, 0.5).unproject(camera);
+  _td.copy(_tw).sub(camera.position).normalize();
+  const t = (pet.z - camera.position.z) / _td.z;
+  return { x: camera.position.x + _td.x * t, y: camera.position.y + _td.y * t };
+};
 
 // place camera + canvas so the view is centred on her (rotated) centre of mass
 function updateView() {
@@ -136,7 +165,7 @@ function updateView() {
   const c = Math.cos(pet.theta), sn = Math.sin(pet.theta);
   const ox = -sn * h * 0.5, oy = c * h * 0.5;
   let cx = pet.x + ox;
-  let cy = pet.y + pet.bob + pet.crouch + oy + h * 0.12;
+  let cy = pet.y + pet.bob + pet.crouch + oy + h * 0.12 + clips.lift(model) * 0.8;
   // The canvas lands on whole device pixels. Translated by a fraction, the compositor resamples
   // her every frame she breathes, and her outline shimmers. The camera is then moved to match the
   // snapped canvas, so she does not shift inside it by the same fraction.
@@ -145,12 +174,12 @@ function updateView() {
   canvasTop = Math.round((H / 2 - cy * ppu - CS / 2) * dpr) / dpr;
   cx = (canvasLeft + CS / 2 - W / 2) / ppu;
   cy = (H / 2 - canvasTop - CS / 2) / ppu;
-  camera.position.set(cx, cy, camDist);
+  camera.position.set(cx, cy + h * TILT, camDist);
   camera.lookAt(cx, cy, 0);
   canvas.style.transform = fx.style.transform = `translate(${canvasLeft.toFixed(3)}px, ${canvasTop.toFixed(3)}px)`;
   // contact shadow: sits on the floor under her, fades as she rises
   const lift = clamp((pet.y - groundY) / (h * 0.9), 0, 1);
-  shadow.position.set(pet.x + ox * 0.6, groundY + 0.004, 0.04);
+  shadow.position.set(pet.x + ox * 0.6, groundY + 0.004, pet.z + 0.04);
   const sw = h * (0.55 + 0.25 * lift), sd = h * 0.32;
   shadow.scale.set(sw, sd, 1);
   shadow.material.opacity = 0.85 * (1 - lift) * (pet.state === 'sit' ? 1.1 : 1);
@@ -257,15 +286,18 @@ async function loadModel(buffer, name) {
     for (const n in exprAlias) delete exprAlias[n];
     layout();
     pet.onGround = true; pet.y = groundY; pet.theta = 0; pet.omega = 0; pet.vx = 0; pet.vy = 0;
+    pet.z = 0; pet.walkTargetZ = 0;
     setState('idle');
     // place the root before resetting springs so hair doesn't inherit a teleport
-    root.position.set(pet.x, pet.y, 0);
+    root.position.set(pet.x, pet.y, pet.z);
     root.updateMatrixWorld(true);
     vrm.springBoneManager?.reset();
     springResetPending = 2;
     bridge.log(`loaded ${name} (${height.toFixed(2)}u tall, ${Object.keys(bones).length} bones)`);
+    clips.resetRig();   // clip pack off (2026-09-24): her own procedural motion, nothing to preload
     bridge.modelReady();
-    if (cfg && !cfg.tourDone && !tourActive) setTimeout(startTour, 900);
+    // the website's starter runs first and starts the tour itself when it is done (window.pet.holdTour)
+    if (cfg && !cfg.tourDone && !tourActive && !(window.pet && window.pet.holdTour)) setTimeout(startTour, 900);
   } catch (e) {
     bridge.log(`load failed: ${e.message}`);
     loadingEl.textContent = `Failed to load model: ${e.message}`;
@@ -300,10 +332,42 @@ function playFile(f, volume = 1) {
     a.volume = clamp((cfg?.volume ?? 0.6) * volume, 0, 1);
     a.playbackRate = clamp(cfg?.pitch ?? 1, 0.5, 2);
     try { a.preservesPitch = false; a.mozPreservesPitch = false; } catch {}
+    lipAttach(a);
     a.play().catch((e) => bridge.log('file sound: ' + e.message));
   } catch (e) { bridge.log('file sound: ' + e.message); }
 }
 // play whatever is assigned to an event: a synthesised phrase, or "file:name.wav" from the sounds folder
+// ---------------------------------------------------------------- lip sync
+// Her mouth follows what she is saying: the clip's waveform through an analyser when the audio
+// context is running, otherwise a syllable-ish pattern for the clip's length. Read in step().
+const lip = { an: null, buf: null, el: null, level: 0, untilT: -1, a: 0 };
+function lipAttach(a) {
+  lip.el = a; lip.untilT = -1;
+  a.addEventListener('loadedmetadata', () => { if (lip.el === a && !lip.an) lip.untilT = T + (a.duration || 1.5) / (a.playbackRate || 1); });
+  a.addEventListener('ended', () => { if (lip.el === a) { lip.el = null; lip.untilT = -1; } });
+  try {
+    if (!audioCtx || audioCtx.state !== 'running') return;   // routed through a suspended context it would be silent
+    const src = audioCtx.createMediaElementSource(a);
+    const an = audioCtx.createAnalyser(); an.fftSize = 512; an.smoothingTimeConstant = 0.4;
+    src.connect(an); an.connect(audioCtx.destination);
+    lip.an = an; lip.buf = lip.buf || new Uint8Array(an.fftSize); lip.src = src;
+  } catch (e) { /* no analyser: the timed pattern below */ }
+}
+function lipSync(dt) {
+  let target = 0;
+  if (lip.el && !lip.el.paused && !lip.el.ended) {
+    if (lip.an) {
+      lip.an.getByteTimeDomainData(lip.buf);
+      let sum = 0; for (let i = 0; i < lip.buf.length; i++) { const v = (lip.buf[i] - 128) / 128; sum += v * v; }
+      const rms = Math.sqrt(sum / lip.buf.length);
+      target = clamp((rms - 0.015) * 7, 0, 1);
+    } else if (lip.untilT > T) {
+      target = 0.35 + 0.45 * Math.max(0, Math.sin(T * 17) * 0.6 + Math.sin(T * 29 + 1) * 0.4);
+    }
+  } else if (lip.an) { lip.an = null; lip.el = null; }
+  lip.level = damp(lip.level, target, target > lip.level ? 40 : 18, dt);
+  if (lip.level > 0.02) { expr('aa', lip.level * 0.8); expr('oh', lip.level * (1 - lip.level) * 0.5); }
+}
 function playAssigned(name, volume = 1) {
   if (!name) return;
   if (name.startsWith('file:')) { const f = soundFile(name.slice(5)); if (f) playFile(f, volume); return; }
@@ -314,10 +378,44 @@ function playAssigned(name, volume = 1) {
 // until a time. She keeps tracking trades and standing there either way.
 const dndOn = () => !!cfg && Number(cfg.dndUntil) > Date.now();
 const quiet = (kind) => !cfg || dndOn() || cfg['quiet' + kind] === true;   // kind: Bubbles | Reactions | Board | Sounds
+// Variety for the event slots: while a slot still holds its default clip, one of these plays
+// instead, at random. Assign a clip in the panel and that slot goes back to playing just that.
+const GIRL = (...names) => names.map((x) => 'file:girl-' + x + '.mp3');
+const SOUND_POOLS = {
+  profit: GIRL('yattaa', 'yattane', 'ureshii', 'ureshiinaa', 'banzai', 'arigatou', 'thankyou', 'wow', 'sonotyoushisonotyousi', 'tottemouresiidesu'),
+  bigProfit: GIRL('kyahaha', 'panpakapan', 'ahaha2', 'banzai', 'kyaayadahazukashii', 'yattaa'),
+  loss: GIRL('sonnaa', 'uu', 'shock', 'gege', 'chottomazuikamo', 'ee2', 'uso', 'gusuhikkuhikku'),
+  bigLoss: GIRL('ueeen', 'uwaan', 'dattedatte', 'shock', 'moushiranai', 'gyaaa'),
+  buy: GIRL('oo', 'o', 'yo', 'hee', 'hirameita', 'ei', 'oo2'),
+  sell: GIRL('n', 'nn', 'hee', 'are', 'haihai'),
+  cheerUp: GIRL('ganbatte', 'ganbare', 'atochotto', 'furefure'),
+  grab: GIRL('hyaa', 'kyaaa', 'a', 'uwaa'),
+  throw: GIRL('kyaaa', 'gyaaa', 'hyaa'),
+  land: GIRL('a', 'u', 'uu2'),
+  jump: GIRL('wow', 'yoho', 'tou'),
+  stretch: GIRL('akubi', 'nn'),
+  connect: GIRL('hai', 'haihaihaai', 'yobimashita', 'konnichiha'),
+};
+// the slots' defaults from before the voice pack: a saved settings file still holding one of
+// these has not been customised, so the pack takes over
+const LEGACY_DEFAULTS = new Set(GIRL('yattaa', 'kyahaha', 'uu', 'ueeen', 'sonnaa', 'oo', 'n', 'hai', 'ehehe', 'nn', 'hyaa', 'kyaaa', 'a', 'uu2', 'wow', 'akubi', 'ganbatte'));
+const PACK_SLOT = { sell: 'sellFlat' };   // slot name -> pack group, where they differ
+function packPool(event) { const g = VOICE_PACK.events[PACK_SLOT[event] || event]; return g && g.length && soundFile(g[0].slice(5)) ? g : null; }
+// A line from the pack for a moment that has no slot (greeting, waking, the guard look…).
+function voiceLine(group, o = {}) {
+  if (!cfg || cfg.muted || quiet('Sounds')) return;
+  const g = VOICE_PACK.events[group]; if (!g || !g.length) return;
+  if (T - (soundCooldown['pack:' + group] ?? -99) < (o.cooldown ?? 0.5) || T - lastSoundAt < 0.15) return;
+  const f = soundFile(pick(g).slice(5)); if (!f) return;
+  soundCooldown['pack:' + group] = T; lastSoundAt = T; playFile(f, o.volume ?? 1);
+}
 function sound(event, o = {}) {
   if (!cfg || cfg.muted || quiet('Sounds')) return;
-  const name = (cfg.sounds || {})[event];
+  let name = (cfg.sounds || {})[event];
   if (!name) return;
+  const isDefault = name === (cfg.defaultSounds || {})[event] || LEGACY_DEFAULTS.has(name);
+  const pool = isDefault ? (packPool(event) || SOUND_POOLS[event]) : null;
+  if (pool) name = pick(pool.filter((x) => soundFile(x.slice(5))).concat([name]));
   if (T - (soundCooldown[event] ?? -99) < (o.cooldown ?? 0.3)) return;
   if (T - lastSoundAt < 0.15) return;
   soundCooldown[event] = T; lastSoundAt = T;
@@ -562,6 +660,7 @@ function handleRelay(m) {
   } else if (m.type === 'trade') {
     cleanTrade(m);
     if (!m.mint) return;
+    if (m.paper) paperFeed = true;                // the website's paper terminal: a feed, not the relay
     relayTrades++; relayLastTradeAt = Date.now(); refreshRelayStatus();
     trackTrade(m);
     tourFlag('trade');
@@ -631,15 +730,18 @@ function reactToTrade(t) {
     if (react && cfg?.guard !== false && ls && T - ls.at < GUARD_WINDOW) {
       sound('hover', { cooldown: 1 });
       say(pick([`…are you sure${y ? ', ' + y : ''}?`, `${sym} again? You just took a loss on it${y ? ', ' + y : ''}…`, `Chasing it${y ? ', ' + y : ''}? Mm.`]), 5, -1);
-      if (!busy) setState('guard');
+      voiceLine('guard');
+      if (!busy) { pet.reactKind = 'guardTrade'; setState('guard'); }
       return;
     }
-    sound('buy', { cooldown: 1.4 }); say(line(LINES.buy, sym, money(t.amount)));
-    if (react && !busy) setState('notice');
+    const bigBuy = t.quote === 'USDC' ? Number(t.amount) >= 300 : Number(t.amount) >= 2;
+    if (bigBuy && packPool('bigBuy')) voiceLine('bigBuy'); else sound('buy', { cooldown: 1.4 });
+    say(line(LINES.buy, sym, money(t.amount)));
+    if (react && !busy) { pet.reactKind = bigBuy ? 'bigBuy' : 'buy'; setState('notice'); }
     return;
   }
   const pnl = t.pnl;
-  if (pnl == null) { sound('sell'); say(`Sold ${sym} for ${money(t.amount)}~`); if (react && !busy) setState('notice'); return; }
+  if (pnl == null) { sound('sell'); say(`Sold ${sym} for ${money(t.amount)}~`); if (react && !busy) { pet.reactKind = 'sellFlat'; setState('notice'); } return; }
   const pct = t.pnlPct ?? 0;
   const thr = t.quote === 'USDC' ? 3 : 0.02;
   if (pnl >= thr) {
@@ -647,18 +749,18 @@ function reactToTrade(t) {
     sound(big ? 'bigProfit' : 'profit', { cooldown: 1.2 });
     say(line(big ? LINES.bigProfit : LINES.profit, sym, '+' + money(pnl), pct), undefined, 1);
     moodShift(big ? 0.5 : 0.35);
-    if (react && !busy) { pet.happy = 1; setState('cheer'); }
+    if (react && !busy) { pet.happy = 1; pet.reactKind = big ? 'bigProfit' : 'profit'; setState('cheer'); }
     if (react) { addGlow(big ? 1 : 0.7); healHurt(big ? 0.6 : 0.35); }
   } else if (pnl <= -thr) {
     const big = (t.quote === 'USDC' ? pnl <= -150 : pnl <= -1) || pct <= -50;
     sound(big ? 'bigLoss' : 'loss', { cooldown: 1.2 });
     say(line(big ? LINES.bigLoss : LINES.loss, sym, '−' + money(pnl), pct), undefined, -1);
     moodShift(big ? -0.5 : -0.35);
-    if (react && !busy) setState('comfort');
+    if (react && !busy) { pet.reactKind = big ? 'bigLoss' : 'loss'; setState('comfort'); }
     if (react) addHurt(big ? 0.75 : 0.45);
   } else {
     sound('sell', { cooldown: 1.2 }); say(line(LINES.flat, sym, money(t.amount)));
-    if (react && !busy) setState('notice');
+    if (react && !busy) { pet.reactKind = 'sellFlat'; setState('notice'); }
   }
   if (react) checkMilestones(t);
 }
@@ -705,6 +807,8 @@ function recordFill(m) {
 // something worth a confetti cannon
 function checkMilestones(t) {
   if (!cfg || !cfg.stats) return;
+  // the lesson's copy of her talks about the trade in front of you, not about your first SOL day
+  if (window.pet && window.pet.lesson) return;
   const st = cfg.stats, ms = { ...(cfg.milestones || {}) }, y = who();
   let text = null;
   if (st.streak >= 5 && ms.streak !== st.day) { ms.streak = st.day; text = `${st.streak} greens in a row${y ? ', ' + y : ''}!!`; }
@@ -720,12 +824,14 @@ function celebrate(text) {
   moodShift(0.4);
   addGlow(1);
   spawnConfetti(70);
-  if (pet.state !== 'grabbed' && pet.state !== 'falling') { pet.happy = 1; setState('cheer'); }
+  voiceLine('milestone', { cooldown: 0 });
+  if (pet.state !== 'grabbed' && pet.state !== 'falling') { pet.happy = 1; pet.reactKind = 'milestone'; setState('cheer'); }
 }
 
 // ---------------------------------------------------------------- the scorecard
 let scorecardUntil = -1, scorecardTitle = 'TODAY', scorecardStats = null;
 function showScorecard(st, title = 'TODAY') {
+  voiceLine('scorecard', { cooldown: 5 });
   scorecardStats = st || dayStats(); scorecardTitle = title; scorecardUntil = T + 30;
   signDismissedId = null;
   const y = who();
@@ -776,17 +882,50 @@ function marketWatch(p) {
   p.peakPct = Math.max(p.peakPct || 0, pct);
   const y = who(), sym = c.title;
   const now = T;
-  const gaspLevel = pct >= 900 ? 4 : pct >= 400 ? 3 : pct >= 200 ? 2 : pct >= 100 ? 1 : 0;
+  // A bag she watched open and that is running right now gets a reaction on every rung — she
+  // should not stand there politely through a 10×. An older bag creeping up over an afternoon
+  // gets the big rungs only, a minute and a half apart.
+  const fresh = now - (p.openedAt || 0) < 180;
+  const gap = fresh ? 2.5 : 90;
+  let level = 0;
+  for (const [th, lv] of [[30, 1], [60, 2], [100, 3], [200, 4], [400, 5], [900, 6]]) if (pct >= th) level = lv;
+  if (!fresh && level < 3) level = 0;
   const dumpLevel = pct <= -70 ? 2 : pct <= -40 ? 1 : 0;
-  const gaveBack = p.peakPct >= 80 && p.peakPct - pct >= 60 && !p.gaveBackAt;
-  const calm = pet.state === 'idle' || pet.state === 'sit' || pet.state === 'walk' || pet.state === 'notice';
-  if (gaspLevel > (p.gaspLevel || 0) && now - (p.gaspAt || -999) > 90) {
-    p.gaspLevel = gaspLevel; p.gaspAt = now; p.at = T;
-    const x = ['', '2', '3', '5', '10'][gaspLevel];
-    sound('bigProfit', { cooldown: 20, volume: 0.8 });
-    say(pick([`${sym} is ${x}×${y ? ', ' + y : ''}!!`, `Look at ${sym}! ${x}×!`, `${y ? y + '! ' : ''}${sym} just went ${x}×!`]), 6, 1);
-    moodShift(0.2);
-    if (calm) setState('gasp');
+  // giving it back: sixty points off the peak, and a real share of it — a 5× wobbling to 4.4× is
+  // not a dump
+  const gaveBack = p.peakPct >= 80 && p.peakPct - pct >= Math.max(60, 0.3 * p.peakPct) && !p.gaveBackAt;
+  const calm = ['idle', 'sit', 'walk', 'notice', 'point', 'gasp', 'wave'].includes(pet.state);
+  if (level > (p.runLevel || 0) && now - (p.gaspAt || -999) > gap) {
+    p.runLevel = level; p.gaspAt = now; p.at = T;
+    const x = ['', '', '', '2', '3', '5', '10'][level];
+    if (level === 1) {
+      sound('hover', { cooldown: 1, volume: 0.7 });
+      say(pick([`${sym} is moving~`, `Oh? ${sym} is waking up!`, `Look, ${sym}~`]), 4, 1);
+      if (calm) setState('notice');
+      addGlow(0.2);
+    } else if (level === 2) {
+      sound('jump', { cooldown: 1, volume: 0.7 });
+      say(pick([`Go go go${y ? ' ' + y : ''}~!`, `${sym}!! It's running!`, `Ehehe, ${sym} is flying~`]), 4, 1);
+      if (calm && pet.onGround) pet.micro = { name: 'hop', t: 0, dur: 1.15, side: 1 };
+      addGlow(0.3);
+    } else if (level === 3) {
+      sound('bigProfit', { cooldown: 2, volume: 0.8 });
+      say(pick([`${sym} is ${x}×${y ? ', ' + y : ''}!!`, `Look at ${sym}! ${x}×!`, `${y ? y + '! ' : ''}${sym} just went ${x}×!`]), 5, 1);
+      moodShift(0.2); addGlow(0.5);
+      if (calm) setState('gasp');
+    } else if (level === 4) {
+      sound('bigProfit', { cooldown: 2, volume: 0.9 });
+      say(pick([`${x}×!! Are you seeing this${y ? ', ' + y : ''}?!`, `${sym} ${x}×!!! Don't blink!`]), 5, 1);
+      moodShift(0.25); addGlow(0.6);
+      if (calm) { pet.happy = 1; setState('cheer'); }
+    } else if (level === 5) {
+      sound('bigProfit', { cooldown: 2, volume: 1 });
+      say(pick([`${x}×!!! ${sym}!!!`, `${x}× ${y ? y + '!' : '!!'} Don't you dare sell yet~`]), 5, 1);
+      moodShift(0.3); addGlow(0.8); spawnConfetti(30);
+      if (calm) { pet.happy = 1; setState('cheer'); }        // the cheer keeps the board in her hands; a jump would put it away
+    } else {
+      celebrate(pick([`TEN X!!! ${sym}!!!`, `${sym} is ${x}×${y ? ', ' + y : ''}!!! I can't—`]));
+    }
   } else if ((dumpLevel > (p.dumpLevel || 0) || gaveBack) && now - (p.winceAt || -999) > 120) {
     if (gaveBack) p.gaveBackAt = now; else p.dumpLevel = dumpLevel;
     p.winceAt = now; p.at = T;
@@ -809,7 +948,8 @@ function companionTick(dt) {
   dayStats();                                  // rolls the day over when it changes
   // first sight of the day
   const today = dayKey();
-  if (settingsApplied && cfg.lastGreetDay !== today && !tourActive && T > 3) {
+  // the lesson's copy of her never greets the day or nudges: she has one job for thirty seconds
+  if (settingsApplied && cfg.lastGreetDay !== today && !tourActive && T > 3 && pet.state !== 'sleep' && pet.state !== 'wake' && !(window.pet && window.pet.lesson)) {
     saveCfg({ lastGreetDay: today });
     const h = new Date().getHours(), y = who();
     const g = h < 5 ? 'Still up' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
@@ -895,7 +1035,7 @@ function renderPanel() {
       <div class="row"><label class="sw mini" style="flex:1"><input type="checkbox" id="fMute"${c.muted ? ' checked' : ''}>Mute</label>
         <button class="ghost fix" id="btnVoiceTest">Test voice</button></div>
       <div class="sep"></div>
-      <div class="f"><label><span>Your name</span><b>what she calls you</b></label><input type="text" id="fUserName" value="${esc(c.userName || '')}" placeholder="Alex" maxlength="24" spellcheck="false"></div>
+      <div class="f"><label><span>Your name</span><b>what she calls you</b></label><input type="text" id="fUserName" value="${esc(c.userName || '')}" placeholder="John" maxlength="24" spellcheck="false"></div>
       <div class="sep"></div>
       <div class="f"><label><span>Quiet</span><b>${dndOn() ? 'do not disturb until ' + new Date(Number(c.dndUntil)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'she reacts to everything'}</b></label>
         <select id="fDnd"><option value="0">${dndOn() ? 'Stop do not disturb' : 'Do not disturb…'}</option><option value="30">for 30 minutes</option><option value="60">for 1 hour</option><option value="120">for 2 hours</option><option value="tomorrow">until tomorrow 08:00</option></select></div>
@@ -938,7 +1078,7 @@ function renderPanel() {
         <div class="f"><label>Board style</label><select id="fSignStyle">${SIGN_STYLES.map((st, i) => `<option value="${i}"${i === SIGN_STYLES.indexOf(signStyle()) ? ' selected' : ''}>${esc(st.label)}</option>`).join('')}</select></div></div>
       <div class="f">${lab('Board size', pct(c.signSize ?? 1))}<input type="range" id="fSignSize" min="0.5" max="1.8" step="0.05" value="${c.signSize ?? 1}"></div>
       <div class="hint">Held in both hands the board is sized to her grip, so this only widens the overhang.</div>
-      <div class="row"><div class="f half">${lab('SOL price $', liveSolUsd > 0 ? 'live ' + liveSolUsd.toFixed(2) : 'fallback')}<input type="text" id="fSolPrice" value="${esc(String(c.solPrice ?? 101.95))}" spellcheck="false"></div><div class="f"></div></div>
+      <div class="row"><div class="f half">${lab('SOL price $', liveSolUsd > 0 ? 'live ' + liveSolUsd.toFixed(2) : 'fallback')}<input type="text" id="fSolPrice" value="${esc(String(c.solPrice ?? 113))}" spellcheck="false"></div><div class="f"></div></div>
       <div class="hint">The relay sends the live SOL price; this is only used until it has.</div>
       <div class="sep"></div>
       <div class="row"><div class="f"><label>Open coins in</label><select id="fOpenWith">${[['axiom', 'Axiom'], ['pump', 'pump.fun'], ['dexscreener', 'DexScreener']].map(([v, l]) => `<option value="${v}"${v === (c.openWith || 'axiom') ? ' selected' : ''}>${l}</option>`).join('')}</select></div>
@@ -1106,30 +1246,33 @@ function closeHer() { if (panelOpen) closePanel(); }
 // a wallet); the rest step on a button. It runs once, on the first boot, and again from the Her
 // tab or after a reset. Nothing here blocks her: she still reacts, walks and talks throughout.
 const tourEl = document.getElementById('tour');
+// Where she says she lives. The desktop app stands her on the taskbar; the website (cfg.home =
+// 'page', set by the browser bridge) stands her at the foot of the page.
+const home = () => (cfg && cfg.home === 'page' ? 'down here at the bottom of the page' : 'down here on your taskbar');
 const TOUR = [
-  { key: 'name', eyebrow: 'Welcome', title: "Hi! I'm Yui, your Trading Companion", body: "I'll live down here on your taskbar, watch your wallet and react to every trade — cheering, sulking, keeping score. First: what should I call you?",
+  { key: 'name', eyebrow: 'Welcome', title: "Hi! I'm Yui, your Trading Companion", body: () => `I'll live ${home()}, watch your wallet and react to every trade — cheering, sulking, keeping score. First: what should I call you?`,
     input: true, cta: 'Nice to meet you', say: () => "I'm Yui, your Trading Companion~ What should I call you?" },
-  { key: 'click', eyebrow: 'Step 1 of 7', title: 'Click me once', body: 'That opens my settings. Click me again to put them away, or press Escape.',
-    wait: 'waiting for a click', flag: 'panel', skip: 'Skip', say: (y) => `Click me${y ? ', ' + y : ''}~` },
-  { key: 'throw', eyebrow: 'Step 2 of 7', title: 'Pick me up', body: 'Grab me anywhere and drag. Let go while moving and I fly. I land on my feet. Mostly.',
-    wait: 'waiting for a throw', flag: 'throw', skip: 'Skip', say: (y) => `Throw me${y ? ', ' + y : ''}! I can take it~` },
-  { key: 'look', eyebrow: 'Step 3 of 7', title: 'Dress me up', body: 'The Look tab: outfit, hair, the shape of me. Everything applies live and is remembered. Take your time — press the button when you are happy.',
-    highlight: 'look', unlock: 'look', cta: 'Done dressing', say: () => 'Make me cute~' },
-  { key: 'wallet', eyebrow: 'Step 4 of 7', title: 'Connect your wallet', body: "In the Wallet tab: paste the public address you buy from, then press Connect. When it says Live, I can see your trades. I only read the address — I never ask you to sign anything.",
-    highlight: 'wallet', wait: 'waiting for Live', flag: 'wallet', skip: 'Later', say: () => 'Whose bags am I watching?' },
-  { key: 'testbuy', eyebrow: 'Step 5 of 7', title: 'Make a small test buy', body: "Any coin, any size — I react the moment it lands, and my board shows the position. Sell it afterwards to see the other side.",
-    wait: 'waiting for your trade', flag: 'trade', skip: 'Skip', needsRelay: true, say: (y) => `Go on${y ? ' ' + y : ''}, I'm watching~` },
-  { key: 'reactions', eyebrow: 'Step 6 of 7', title: 'What I do', body: "Try each one. These are pretend — nothing is sent anywhere. I jump when you win, bruise when you lose, and the marks heal over a few minutes.",
+  { key: 'reactions', eyebrow: 'step', title: 'What I do', body: "Try each one. These are pretend — nothing is sent anywhere. I jump when you win, bruise when you lose, and the marks heal over a few minutes.",
     demo: true, cta: 'Next', say: () => 'Press one!' },
-  { key: 'done', eyebrow: 'That is everything', title: (y) => `Have fun${y ? ', ' + y : ''}!`, body: "I'll be down here on your taskbar. The Her tab replays this or resets me if you ever want a fresh start.",
+  { key: 'click', eyebrow: 'step', title: 'Click me once', body: 'That opens my settings. Click me again to put them away, or press Escape.',
+    wait: 'waiting for a click', flag: 'panel', skip: 'Skip', say: (y) => `Click me${y ? ', ' + y : ''}~` },
+  { key: 'throw', eyebrow: 'step', title: 'Pick me up', body: 'Grab me anywhere and drag. Let go while moving and I fly. I land on my feet. Mostly.',
+    wait: 'waiting for a throw', flag: 'throw', skip: 'Skip', say: (y) => `Throw me${y ? ', ' + y : ''}! I can take it~` },
+  { key: 'look', eyebrow: 'step', title: 'Dress me up', body: 'The Look tab: outfit, hair, the shape of me. Everything applies live and is remembered. Take your time — press the button when you are happy.',
+    highlight: 'look', unlock: 'look', cta: 'Done dressing', say: () => 'Make me cute~' },
+  { key: 'wallet', eyebrow: 'step', title: 'Connect your wallet', body: "In the Wallet tab: paste the public address you buy from, then press Connect. When it says Live, I can see your trades. I only read the address — I never ask you to sign anything.",
+    highlight: 'wallet', wait: 'waiting for Live', flag: 'wallet', skip: 'Later', say: () => 'Whose bags am I watching?' },
+  { key: 'testbuy', eyebrow: 'step', title: 'Make a small test buy', body: "Any coin, any size — I react the moment it lands, and my board shows the position. Sell it afterwards to see the other side.",
+    wait: 'waiting for your trade', flag: 'trade', skip: 'Skip', needsRelay: true, say: (y) => `Go on${y ? ' ' + y : ''}, I'm watching~` },  { key: 'done', eyebrow: 'That is everything', title: (y) => `Have fun${y ? ', ' + y : ''}!`, body: () => `I'll be ${home()}. The Her tab replays this or resets me if you ever want a fresh start.`,
     cta: "Let's go", say: (y) => `Good luck out there${y ? ', ' + y : ''}~` },
 ];
-let tourActive = false, tourStep = -1, tourStepAt = 0;
+let tourActive = false, tourStep = -1, tourStepAt = 0, tourPraised = false;
 const tourFlags = { panel: false, throw: false, look: false, wallet: false, trade: false };
 function tourFlag(k) { if (tourActive && k in tourFlags) tourFlags[k] = true; }
 function startTour() {
   if (!tourEl || !model) return;
   for (const k in tourFlags) tourFlags[k] = false;
+  tourPraised = false;
   tourActive = true; tourStep = -1;
   if (pet.state === 'walk') setState('idle');
   tourGo(0);
@@ -1150,12 +1293,16 @@ function tourGo(i) {
   tourStep = i; tourStepAt = T;
   const st = TOUR[i], y = who();
   const title = typeof st.title === 'function' ? st.title(y) : st.title;
+  // "Step n of m" is counted from the order they are in, so moving one around renumbers the rest
+  const numbered = TOUR.filter((x) => x.eyebrow === 'step');
+  const eyebrow = st.eyebrow === 'step' ? `Step ${numbered.indexOf(st) + 1} of ${numbered.length}` : st.eyebrow;
+  const body = typeof st.body === 'function' ? st.body(y) : st.body;
   tourEl.className = '';
-  tourEl.innerHTML = `<span class="tail"></span><div class="eyebrow">${esc(st.eyebrow)}</div><h3>${esc(title)}</h3><p>${esc(st.body)}</p>`
-    + (st.input ? `<input type="text" id="tourName" placeholder="Alex" maxlength="24" spellcheck="false" value="${esc(y)}">` : '')
+  tourEl.innerHTML = `<span class="tail"></span><div class="eyebrow">${esc(eyebrow)}</div><h3>${esc(title)}</h3><p>${esc(body)}</p>`
+    + (st.input ? `<input type="text" id="tourName" placeholder="John" maxlength="24" spellcheck="false" value="${esc(y)}">` : '')
     + (st.demo ? `<div class="demo"><button class="ghost" data-demo="profit">Profit</button><button class="ghost" data-demo="loss">Loss</button><button class="ghost" data-demo="buy">Buy</button></div>` : '')
     + `<div class="actions">`
-    + (st.cta ? `<button id="tourNext"${st.unlock && !tourFlags[st.unlock] ? ' disabled title="Change something first"' : ''}>${esc(st.cta)}</button>` : `<span class="wait">${esc(st.wait)}</span>`)
+    + (st.cta ? `<button id="tourNext">${esc(st.cta)}</button>` : `<span class="wait">${esc(st.wait)}</span>`)
     + (st.skip ? `<button class="ghost" id="tourSkip">${esc(st.skip)}</button>` : '')
     + `<span class="dots">${TOUR.map((_, k) => `<i class="${k < i ? 'done' : k === i ? 'on' : ''}"></i>`).join('')}</span></div>`;
   tourEl.hidden = false;
@@ -1175,7 +1322,7 @@ function tourGo(i) {
   if (st.flag === 'wallet' && relayStatus === 'ok') { tourFlags.wallet = true; tourStepAt = T + 1.2; }   // already connected: show the step, then move on
   tourHighlight(st.highlight || null);
   if (st.say) say(st.say(y), 5);
-  if (st.key === 'done') setState('wave');
+  if (st.key === 'name' || st.key === 'done') setState('wave');   // hello, and goodbye
 }
 // the pretend trades behind the demo buttons: they go through reactToTrade only, never the book
 function tourDemo(kind) {
@@ -1191,8 +1338,9 @@ function tourTick() {
     if (st.flag === 'panel') sound('click');
     tourGo(tourStep + 1);
   }
-  // a step that unlocks its button once the user has done the thing: they continue when ready
-  if (st.unlock && tourFlags[st.unlock]) { const b = tourEl.querySelector('#tourNext'); if (b && b.disabled) { b.disabled = false; b.title = ''; say('Ehehe, cute! Keep going, or press the button~', 4); } }
+  // a step that asks for a change but never requires one: the button is live from the start, and
+  // the first change earns a word from her
+  if (st.unlock && tourFlags[st.unlock] && !tourPraised) { tourPraised = true; say('Ehehe, cute! Keep going, or press the button~', 4); }
 }
 // beside her, on the side the panel is not using, following her as she moves
 let tourLeft = -1, tourTop = -1;
@@ -1235,6 +1383,7 @@ const pet = {
   squash: new Spring(1, 320, 18),
   grab: null,                      // { gx, gy, bone, pivot, pivotVel, pivotAcc, shake }
   walkTarget: 0, walkPhase: 0,
+  z: 0, walkTargetZ: 0, zWant: null,   // depth: 0 is the front of the stage, back is -1.3 heights
   micro: null,                     // idle micro-action { name, t, dur }
   nextActionAt: 5,
   lastInteraction: 0,
@@ -1244,8 +1393,11 @@ const pet = {
   glow: 0, hurt: 0, wounds: [],     // trade after-effects: golden glow / bruises (see updateFx)
   mood: 0,                         // -1 worried .. +1 bouncy; fades over an hour
   pokeAt: -99, flinchAt: -99, sleepSaidAt: 0,
+  pointDir: 1, pointUntil: 0, pointUp: 0, pointTarget: null,   // the 'point' state
+  stay: false,                     // pinned where she stands (the website's lesson)
   jumpFlag: false,
   sitUntil: 0,
+  reactKind: null,                 // which trade reaction the next state is for (motion clip pool)
 };
 const G = 9.0; // gravity in world units/s²
 
@@ -1265,17 +1417,22 @@ function setState(s) {
     let tx = pet.x;
     for (let i = 0; i < 8 && Math.abs(tx - pet.x) < 1.5; i++) tx = rand(minX + 0.3, maxX - 0.3);
     pet.walkTarget = clamp(tx, minX, maxX);
+    // and a depth: a walk asked for (a trade brought her forward) or anywhere on the stage
+    pet.walkTargetZ = 0;   // she walks along the front, as before the clip pack
+    pet.zWant = null;
     pet.facing = Math.sign(pet.walkTarget - pet.x) || 1;
+    pet.run = motionOn() && Math.hypot(pet.walkTarget - pet.x, pet.walkTargetZ - pet.z) > 2.6;
   }
-  if (s === 'idle') { pet.micro = null; pet.nextActionAt = T + rand(4, 10) * (moodUp() ? 0.6 : moodDown() ? 1.8 : 1); }
-  if (s === 'sleep') { pet.micro = null; pet.sleepSaidAt = T; say('…zzz', 3); }
-  if (s === 'wake') { sound('grab', { cooldown: 2, volume: 0.6 }); }
+  if (s === 'idle') { pet.micro = null; pet.nextActionAt = T + (pet.zWant != null ? 0.8 : rand(4, 10) * (moodUp() ? 0.6 : moodDown() ? 1.8 : 1)); }
+  if (s === 'sleep') { pet.micro = null; pet.sleepSaidAt = T; say('…zzz', 3); voiceLine('sleep', { volume: 0.7 }); }
+  if (s === 'wake') { if (packPool('wake')) voiceLine('wake'); else sound('grab', { cooldown: 2, volume: 0.6 }); }
   if (s === 'gasp' || s === 'wince' || s === 'guard') pet.micro = null;
   if (s === 'comfort') { pet.comfortSide = Math.random() < 0.5 ? -1 : 1; pet.cheeredUp = false; }
   if (s === 'sit') { pet.sitUntil = T + rand(30, 90); }
   if (s === 'dizzy') sound('dizzy');
   if (s !== 'grabbed') pet.grab = null;
 }
+
 
 // ---------------------------------------------------------------- input
 function updateCursor(sx, sy) {
@@ -1292,14 +1449,18 @@ function updateCursor(sx, sy) {
 }
 bridge.onCursor((p) => updateCursor(p.x, p.y));
 const realInput = (e) => !(window.__petSyntheticOnly && e.isTrusted); // the self-test ignores the physical mouse
+// What an event landed on. When she lives inside a shadow root (the browser extension) a window
+// listener is handed the shadow host instead of her panel's input; composedPath still knows.
+const evTarget = (e) => (e.composedPath ? e.composedPath()[0] : e.target);
 window.addEventListener('mousemove', (e) => { if (realInput(e)) updateCursor(e.clientX, e.clientY); });
 
 let lastClickAt = -1, downAt = 0, downX = 0, downY = 0;
 let downPanelOpen = false; // whether her settings were up when the press began
 window.addEventListener('mousedown', (e) => {
   if (!realInput(e)) return;
-  if (panelOpen && e.target instanceof Node && panelEl.contains(e.target)) return; // let the panel handle its own clicks
-  if (tourActive && e.target instanceof Node && tourEl.contains(e.target)) return;
+  const et = evTarget(e);
+  if (panelOpen && et instanceof Node && panelEl.contains(et)) return; // let the panel handle its own clicks
+  if (tourActive && et instanceof Node && tourEl.contains(et)) return;
   updateCursor(e.clientX, e.clientY);
   if (!model) return;
   const sb = signHitTest().badge;
@@ -1337,6 +1498,7 @@ window.addEventListener('mouseup', (e) => {
         const y = who();
         if (cursor.hit === 'head') pet.pokeAt = T;   // a tap on the head is a poke, whatever else it does
         say(moodUp() ? pick([`We're on a roll${y ? ', ' + y : ''}~`, `Ehehe, today is going well${y ? ', ' + y : ''}!`]) : moodDown() ? pick([`…hey${y ? ' ' + y : ''}. Rough one, huh?`, `I'm still here${y ? ', ' + y : ''}.`]) : line(LINES.greet, herName()));
+        voiceLine('greet');
       }
     }
     return;
@@ -1346,12 +1508,23 @@ window.addEventListener('mouseup', (e) => {
 // Without these an exception just stops her mid-frame with nothing in the log to explain it.
 window.addEventListener('error', (e) => bridge.log('renderer error: ' + (e.message || e.error)));
 window.addEventListener('unhandledrejection', (e) => bridge.log('unhandled rejection: ' + ((e.reason && e.reason.message) || e.reason)));
+// Only a right-click on her, her panel or her tour card is hers to cancel. On the desktop the
+// window is click-through everywhere else, so nothing else ever arrives; on a page that is not
+// hers (the extension) the site's own context menu must keep working beside her.
+const onHers = (e) => {
+  const t = evTarget(e);
+  if (t instanceof Node && (panelEl.contains(t) || tourEl.contains(t) || bubbleEl.contains(t))) return true;
+  if (!model) return false;
+  updateCursor(e.clientX, e.clientY);
+  return !!hitTest();
+};
 window.addEventListener('contextmenu', (e) => {
+  if (!onHers(e)) return;
   e.preventDefault();
-  const t = e.target;
+  const t = evTarget(e);
   if (t instanceof HTMLInputElement && (t.type === 'text' || t.type === 'password')) { t.focus(); bridge.editMenu(); }   // cut / copy / paste in her fields
 });
-window.addEventListener('dblclick', (e) => e.preventDefault());
+window.addEventListener('dblclick', (e) => { if (onHers(e)) e.preventDefault(); });
 
 bridge.onCommand((c) => {
   pet.lastInteraction = T;
@@ -1371,7 +1544,7 @@ bridge.onSettings((s) => {
   layout();
   applyFigure(); applyFigureTextures();
   if (panelOpen) { renderPanel(); positionPanel(); }
-  if (!first && !s.tourDone && !tourActive && model) { if (relay) disconnectRelay(); resetTradingState(); setTimeout(startTour, 600); }   // a reset from the panel
+  if (!first && !s.tourDone && !tourActive && model && !(window.pet && window.pet.holdTour)) { if (relay) disconnectRelay(); resetTradingState(); setTimeout(startTour, 600); }   // a reset from the panel
   if (first && s.autoConnect && !relay) setTimeout(connectRelay, 1500);
 });
 let settingsApplied = false;
@@ -1421,7 +1594,7 @@ function hitTest() {
     _v.setFromMatrixPosition(b.matrixWorld).project(camera);
     const sp = { x: canvasLeft + (_v.x + 1) / 2 * CS, y: canvasTop + (1 - _v.y) / 2 * CS };
     const hs = n === 'head' ? ((model.rawBones.head && model.rawBones.head.scale.y) || 1) : 1; // the Head slider scales it
-    const r = Math.max(14, HIT_R[n] * hs * ppu * (model.height / 1.6) * 1.2);
+    const r = Math.max(14, HIT_R[n] * hs * ppu * depthScale() * (model.height / 1.6) * 1.2);
     const d = Math.hypot(sp.x - cursor.sx, sp.y - cursor.sy);
     if (d < r && d - r < bestD) { bestD = d - r; best = n; }
   }
@@ -1519,13 +1692,26 @@ function applyExpressions(dt) {
   }
   exprCur.__blink = damp(exprCur.__blink || 0, eyesClosed, 12, dt);
   blink = Math.max(blink, exprCur.__blink);
+  // A VRoid face's moods are whole-face morphs: `relaxed` is Fcl_ALL_Fun, `happy` is Fcl_ALL_Joy,
+  // and each of them already moves the eyelids. Morph targets add, so a full blink on top of a
+  // mood that is half-closing her eyes pushes the lids past shut and through the eyeball. VRM 1.0
+  // says which expression wins (overrideBlink); a 0.x model carries no such field, so it is
+  // settled here: the moods give way for the moment the blink is closed, and what is left of
+  // their eye shape is taken out of the blink so the two can never sum past a full close.
+  const moods = ['happy', 'angry', 'sad', 'relaxed', 'surprised'];
+  let eyeMood = 0;
+  for (const n of moods) eyeMood = Math.max(eyeMood, exprCur[n] || 0);
+  const give = clamp(blink, 0, 1);                       // how far the moods step aside
   for (const n of ['happy', 'angry', 'sad', 'relaxed', 'surprised', 'aa', 'ih', 'ou', 'ee', 'oh']) {
     const tgt = exprTarget[n] || 0;
     exprCur[n] = damp(exprCur[n] || 0, tgt, 9, dt);
     const real = exprName(em, n);
-    if (real) em.setValue(real, exprCur[n]);
+    if (!real) continue;
+    // the mouth shapes (aa…oh) share nothing with the eyelids and are left alone
+    const out = moods.includes(n) ? exprCur[n] * (1 - 0.75 * give) : exprCur[n];
+    em.setValue(real, out);
   }
-  if (em.getExpression('blink')) em.setValue('blink', clamp(blink, 0, 1));
+  if (em.getExpression('blink')) em.setValue('blink', clamp(blink * clamp(1 - 0.85 * eyeMood * (1 - 0.75 * give), 0, 1), 0, 1));
   for (const n in exprTarget) exprTarget[n] = 0;
   eyesClosed = 0;
 }
@@ -1714,6 +1900,9 @@ function reflexes() {
 }
 function chooseIdleAction() {
   const idleFor = T - pet.lastInteraction;
+  // pinned (the website's lesson): she keeps her place beside the board, small fidgets only
+  if (pet.stay) { pet.micro = null; pet.nextActionAt = T + rand(3, 6); return; }
+  if (pet.zWant != null && pet.onGround && !panelOpen) { const keep = pet.x; setState('walk'); pet.walkTarget = keep; return; }
   if (idleFor > 100 && Math.random() < 0.5 && pet.onGround) { setState('sit'); return; }
   const r = Math.random();
   if (r < (moodDown() ? 0.12 : 0.34) && !panelOpen) { setState('walk'); return; } // not while her settings are open
@@ -1904,7 +2093,7 @@ function updateState(dt) {
     groundStep(dt);
     const w = envelope(pet.t, 0.7, 0.18);
     const hard = clamp((pet.landImpact || 0) / 6, 0.3, 1);
-    crouchTarget = -0.16 * w * hard * model.height;
+    crouchTarget = (motionOn() ? 0 : 1) * -0.16 * w * hard * model.height;
     setPose('leftUpperLeg', -0.85 * w * hard, 0.15 * w, 0.1 * w);
     setPose('rightUpperLeg', -0.85 * w * hard, -0.15 * w, -0.1 * w);
     setPose('leftLowerLeg', 1.5 * w * hard, 0, 0);
@@ -1935,7 +2124,7 @@ function updateState(dt) {
     crouchTarget = -0.03 * model.height * w;
     eyesClosed = Math.max(eyesClosed, w);
     expr('ou', 0.7 * w); expr('sad', 0.3 * w);
-    if (pet.t > 2.8) { pet.dizzy = 0; setState('idle'); }
+    if (pet.t > 2.8 && !motionHold()) { pet.dizzy = 0; setState('idle'); }
   }
 
   else if (st === 'wave') {
@@ -1949,22 +2138,58 @@ function updateState(dt) {
     breathing(1);
     headLook(1);
     expr('happy', w);
-    if (pet.t > 1.8) setState('idle');
+    if (pet.t > 1.8 && !motionHold()) setState('idle');
+  }
+
+  else if (st === 'point') {
+    // At something beside her (the website's lesson): she turns a little that way, puts the arm
+    // out and holds it there, eyes on it, until she is told otherwise.
+    groundStep(dt);
+    defaultRate = 12;
+    const w = smoothstep(pet.t / 0.2);
+    const dir = pet.pointDir >= 0 ? 1 : -1;
+    const up = clamp(pet.pointUp || 0, -0.6, 1.5);                       // low … high
+    const arm = dir > 0 ? 'left' : 'right';                              // her left hand is on the viewer's right
+    const k = arm === 'left' ? 1 : -1;
+    yawTarget = dir * 0.3;
+    mixPose(arm + 'UpperArm', -1.25 + 0.5 * up, 0.1 * k, (0.18 + 0.55 * up) * k, w);
+    mixPose(arm + 'LowerArm', 0, -0.1 * k, 0, w);
+    mixPose(arm + 'Hand', 0, 0, 0.15 * k, w);
+    // The aim: her hand *is* the pointer, so the angle of her arm is the angle to the target.
+    // Measured from the hand itself each frame, step-limited with a dead band, so it settles
+    // rather than hunting — and it works at any size or distance, on any rig.
+    if (pet.pointTarget && pet.t > 0.25) {
+      const h = boneScreen(arm + 'Hand'), sh = boneScreen(arm + 'UpperArm');
+      if (h && sh) {
+        const want = Math.atan2(sh.y - pet.pointTarget.y, Math.max(40, Math.abs(pet.pointTarget.x - sh.x)));
+        const have = Math.atan2(sh.y - h.y, Math.max(40, Math.abs(h.x - sh.x)));
+        const err = want - have;
+        if (Math.abs(err) > 0.05) pet.pointUp = clamp(up + clamp(err * 0.6, -0.05, 0.05), -0.6, 1.5);
+      }
+    }
+    addPose('head', (-0.04 - 0.16 * up) * w, -0.28 * dir * w, 0.06 * dir * w);
+    addPose('spine', -0.02 * w, -0.1 * dir * w, 0.03 * dir * w);
+    breathing(1);
+    headLook(0.15);
+    expr('happy', 0.35 * w);
+    if (T > pet.pointUntil) setState('idle');
   }
 
   else if (st === 'walk') {
     groundStep(dt);
     defaultRate = 12;
-    const speed = 0.6 * (model.height / 1.6);
-    const cadence = 0.95;                       // stride cycles per second at full speed
+    const speed = (pet.run ? 1.7 : 0.6) * (model.height / 1.6);
+    const cadence = pet.run ? 1.6 : 0.95;                       // stride cycles per second at full speed
     const legLen = model.hipH * 0.95;
-    const dx = pet.walkTarget - pet.x;
+    const dx = pet.walkTarget - pet.x, dz = pet.walkTargetZ - pet.z;
+    const dist = Math.hypot(dx, dz);
     const dir = Math.sign(dx) || 1;
-    const arriving = clamp(Math.abs(dx) / 0.45, 0, 1);
+    const arriving = clamp(dist / 0.45, 0, 1);
     const starting = smoothstep(pet.t / 0.7);
     const v = speed * smoothstep(arriving) * starting;
-    pet.x += dir * v * dt;
-    pet.facing = dir;
+    if (dist > 1e-4) { pet.x += dx / dist * v * dt; pet.z += dz / dist * v * dt; }
+    pet.facing = dir; pet.walkV = v;
+    // she faces where she is going: sideways along the stage, or straight at you
     yawTarget = dir * 0.95;
     // phase advances with distance travelled so the feet never slide
     const strideLen = speed / (2 * cadence);
@@ -1992,7 +2217,7 @@ function updateState(dt) {
     breathing(0.5);
     headLook(0.5);
     if (Math.random() < dt * 0.3) expr('happy', 0.3);
-    if (Math.abs(dx) < 0.03 || pet.t > 30) { pet.x = pet.walkTarget; setState('idle'); bridge.saveState({ x: pet.x }); }
+    if (dist < 0.03 || pet.t > 30) { pet.x = pet.walkTarget; pet.z = pet.walkTargetZ; setState('idle'); bridge.saveState({ x: pet.x }); }
   }
 
   else if (st === 'sit') {
@@ -2000,7 +2225,7 @@ function updateState(dt) {
     defaultRate = 5;
     groundStep(dt);
     const w = smoothstep(pet.t / 1.3);
-    crouchTarget = -model.hipH * 0.52 * w;
+    crouchTarget = (motionOn() ? 0 : 1) * -model.hipH * 0.52 * w;
     mixPose('leftUpperLeg', -0.32, 0.1, 0.06, w);
     mixPose('rightUpperLeg', -0.32, -0.1, -0.06, w);
     mixPose('leftLowerLeg', 2.35, 0, 0, w);
@@ -2022,7 +2247,7 @@ function updateState(dt) {
     if (!pet.micro && T > pet.nextActionAt) {
       pet.micro = { name: pick(['lookaround', 'headtilt', 'hum', 'sway']), t: 0, dur: 3.5, side: Math.random() < 0.5 ? -1 : 1 };
     }
-    if (T > pet.sitUntil) setState('idle');
+    if (T > pet.sitUntil && !motionHold()) setState('idle');
   }
 
   else if (st === 'sleep') {
@@ -2031,7 +2256,7 @@ function updateState(dt) {
     defaultRate = 3;
     groundStep(dt);
     const w = smoothstep(pet.t / 2.5);
-    crouchTarget = -model.hipH * 0.52 * w;
+    crouchTarget = (motionOn() ? 0 : 1) * -model.hipH * 0.52 * w;
     mixPose('leftUpperLeg', -0.32, 0.1, 0.06, w);   mixPose('rightUpperLeg', -0.32, -0.1, -0.06, w);
     mixPose('leftLowerLeg', 2.35, 0, 0, w);         mixPose('rightLowerLeg', 2.35, 0, 0, w);
     mixPose('leftFoot', 0.75, 0, 0, w);             mixPose('rightFoot', 0.75, 0, 0, w);
@@ -2058,7 +2283,7 @@ function updateState(dt) {
     addPose('head', -0.25 * w, 0, 0.1 * w);
     addPose('spine', -0.08 * w, 0, 0);
     expr('surprised', w); expr('oh', 0.5 * w);
-    if (pet.t > 0.9) { setState('idle'); say(pick(['…I was awake!', 'Mm? I am here!', 'Un!']), 3); }
+    if (pet.t > 0.9 && !motionHold()) { setState('idle'); say(pick(['…I was awake!', 'Mm? I am here!', 'Un!']), 3); }
   }
 
   else if (st === 'gasp') {
@@ -2082,7 +2307,7 @@ function updateState(dt) {
     bobTarget = 0.03 * model.height * Math.max(0, Math.sin(pet.t * 9)) * (pet.t < 0.7 ? w : 0);   // a little bounce on the gasp
     expr('surprised', w); expr('aa', 0.6 * w); expr('happy', 0.4 * point * w);
     headLook(0.2);
-    if (pet.t > 2.4) setState('idle');
+    if (pet.t > 2.4 && !motionHold()) setState('idle');
   }
 
   else if (st === 'wince') {
@@ -2098,7 +2323,7 @@ function updateState(dt) {
     addPose('head', 0.2 * w, 0.2 * w, -0.14 * w);
     eyesClosed = Math.max(eyesClosed, 0.85 * w);
     expr('ih', 0.6 * w); expr('sad', 0.5 * w);
-    if (pet.t > 2.6) setState('idle');
+    if (pet.t > 2.6 && !motionHold()) setState('idle');
   }
 
   else if (st === 'guard') {
@@ -2115,7 +2340,7 @@ function updateState(dt) {
     expr('angry', 0.28 * w); expr('relaxed', 0.3 * w);
     eyesClosed = Math.max(eyesClosed, 0.28 * w);
     headLook(1);
-    if (pet.t > 3.0) setState('idle');
+    if (pet.t > 3.0 && !motionHold()) setState('idle');
   }
 
   else if (st === 'cheer') {
@@ -2141,7 +2366,7 @@ function updateState(dt) {
     addPose('spine', -0.08 * w + 0.1 * dip * w, 0, 0.03 * Math.sin(pet.t * 4.5) * w);
     expr('happy', w); expr('aa', 0.45 * air * w);
     headLook(0.3);
-    if (pet.t > 2.8) setState('idle');
+    if (pet.t > 2.8 && !motionHold()) setState('idle');
   }
 
   else if (st === 'comfort') {
@@ -2164,7 +2389,7 @@ function updateState(dt) {
     expr('sad', 0.75 * w); eyesClosed = Math.max(eyesClosed, 0.35 * w);
     if (!pet.cheeredUp && pet.t > 3.4) { pet.cheeredUp = true; sound('cheerUp', { volume: 0.8 }); }   // a small "ganbatte" to herself at the end
     headLook(0.3);
-    if (pet.t > 4.6) setState('idle');
+    if (pet.t > 4.6 && !motionHold()) setState('idle');
   }
 
   else if (st === 'notice') {
@@ -2179,7 +2404,7 @@ function updateState(dt) {
     addPose('spine', -0.03 * w, 0.06 * w, 0);
     expr('surprised', 0.35 * w); expr('happy', 0.25 * w);
     headLook(1);
-    if (pet.t > 1.8) setState('idle');
+    if (pet.t > 1.8 && !motionHold()) setState('idle');
   }
 
   else { // idle
@@ -2226,6 +2451,8 @@ function updateState(dt) {
     if (!pet.micro && T > pet.nextActionAt) chooseIdleAction();
   }
 
+  motionTick(st, dt);
+  if (motionYaw != null) yawTarget = motionYaw;
   reflexes();
   if (pet.happy > 0) { expr('happy', pet.happy); pet.happy = Math.max(0, pet.happy - dt * 0.7); }
   signPose();
@@ -2347,7 +2574,7 @@ function livePosition() {
 // Dollars are the only market cap a viewer reads at a glance. The relay sends it in dollars
 // (`mcUsd`) priced from the pair's real quote; failing that, a SOL-equivalent cap is converted with
 // the live SOL price, and only with the panel's typed-in price when the relay has never sent one.
-const solRate = () => (liveSolUsd > 0 ? liveSolUsd : Number(cfg?.solPrice) > 0 ? Number(cfg.solPrice) : 101.95);
+const solRate = () => (liveSolUsd > 0 ? liveSolUsd : Number(cfg?.solPrice) > 0 ? Number(cfg.solPrice) : 113);
 function mcText(mc, quote, mcUsd) {
   if (mcUsd > 0) return 'MC $' + compactNum(mcUsd);
   if (!(mc > 0)) return null;
@@ -2389,6 +2616,9 @@ function positionContent(id) {
   const p = positions.get(id.slice(4));
   return p && p.tokens > 0 ? buildPositionContent(p) : null;
 }
+// Fills can also come from the website's paper terminal, which is not a relay connection but is
+// a feed she should keep the board up for once one has arrived.
+let paperFeed = false;
 function signContent() {
   if (cfg?.sign === false) return null;
   const hide = (c) => (c && c.id === signDismissedId ? null : c);
@@ -2396,7 +2626,7 @@ function signContent() {
   if (demo) return hide(demo);
   if (quiet('Board')) return null;
   if (scorecardUntil > T) return hide(scorecardContent());
-  if (relayStatus !== 'ok') return null;
+  if (relayStatus !== 'ok' && !paperFeed) return null;
   if (signListMode) { const l = listContent(); if (l) return hide(l); signListMode = false; }
   const p = livePosition();
   if (p) return hide(buildPositionContent(p));
@@ -3000,6 +3230,7 @@ function signPose() {
 // sampled skin tone first); the bikini top is painted onto the skin.
 const OUTFITS = {
   uniform:   { label: 'School uniform (original)' },
+  yui:       { label: 'Yui violet (logo)', vest: [0.24, 0.10, 0.42], shirt: [0.97, 0.95, 1],   collar: [0.84, 0.44, 1],    skirt: [0.18, 0.07, 0.34], bow: [0.93, 0.46, 0.96] },
   blackgold: { label: 'Black & gold',  vest: [0.10, 0.10, 0.12], shirt: [1, 1, 1],          collar: [0.90, 0.72, 0.28], skirt: [0.10, 0.10, 0.12], bow: [0.95, 0.78, 0.25] },
   crimson:   { label: 'Crimson',       vest: [0.58, 0.07, 0.12], shirt: [1, 1, 1],          collar: [0.15, 0.10, 0.12], skirt: [0.48, 0.06, 0.10], bow: [0.12, 0.10, 0.12] },
   white:     { label: 'All white',     vest: [0.96, 0.96, 0.98], shirt: [1, 1, 1],          collar: [0.62, 0.76, 0.96], skirt: [0.96, 0.96, 0.98], bow: [0.55, 0.75, 0.95] },
@@ -3957,7 +4188,7 @@ function drawWoundInto(g, w, src, W, H) {
 }
 
 function drawFx() {
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const dpr = Math.min(window.devicePixelRatio || 1, WEB_BUILD ? 1.5 : 2);
   const bw = Math.round(CS * dpr);
   if (fx.width !== bw || fx.height !== bw) { fx.width = fx.height = bw; }
   fxg.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -4000,11 +4231,13 @@ function step(dt) {
   companionTick(dt);
   const root = model.root;
   const sq = clamp(pet.squash.update(1, dt), 0.6, 1.25);
-  root.position.set(pet.x, pet.y + pet.bob + pet.crouch, 0);
+  root.position.set(pet.x, pet.y + pet.bob + pet.crouch, pet.z);
   root.rotation.set(0, pet.yaw, pet.theta);
   root.scale.set(1 / Math.sqrt(sq), sq, 1 / Math.sqrt(sq));
   updateView();
   applyPose(dt);
+  lipSync(dt);
+  clips.update(dt); clips.apply(model, !!(sign && sign.mesh.visible)); clips.keepArmsOffBust(model);
   applyExpressions(dt);
   lookTarget.position.set(cursor.wx, cursor.wy, Math.min(4, camDist * 0.5));
   // fade spring-bone gravity out as she tilts past horizontal, so skirts and hair
@@ -4053,12 +4286,13 @@ let paused = false; // set by the test harness, which steps manually
 // for a few seconds drop further still. Anything that actually animates pulls her straight back up.
 // Smoothness over savings: full refresh rate while anything moves (a 144 cap only bites on very
 // fast panels), 60 when she is standing still. The old 60/30 made every fidget stutter.
-const FPS_ACTIVE = 144, FPS_CALM = 60;
+const FPS_ACTIVE = PHONE ? 45 : WEB_BUILD ? 60 : 144, FPS_CALM = WEB_BUILD ? 30 : 60;
 const CALM_AFTER = 2.5;   // seconds of stillness before easing off; covers a settling jiggle
 let calmFor = 0;
 let drawnFrames = 0;   // frames actually rendered, so the cap can be measured rather than assumed
 function busy() {
   return (pet.state !== 'idle' && pet.state !== 'sleep') || !!pet.micro || !pet.onGround || cursor.down || panelOpen
+    || clips.current() !== null   // a motion clip is her moving: never the calm cap
     || sparks.length > 0 || pet.glow > 0
     || Math.abs(pet.vx) > 0.01 || Math.abs(pet.vy) > 0.01 || Math.abs(pet.theta) > 0.01
     || (sign && sign.phase !== 'hidden' && sign.phase !== 'held')
@@ -4079,7 +4313,7 @@ function frame(now) {
   const elapsed = (now - lastFrame) / 1000;
   if (!model || paused) { lastFrame = now; return; }
   calmFor = busy() ? 0 : calmFor + elapsed;
-  const target = 1 / (calmFor > CALM_AFTER ? FPS_CALM : FPS_ACTIVE);
+  const target = 1 / (calmFor > CALM_AFTER ? FPS_CALM : (clips.current() && !PHONE ? 144 : FPS_ACTIVE));
   // a little tolerance, so a 60 cap on a 60Hz panel does not land just short and drop every other frame
   if (elapsed < target * 0.92) return;   // lastFrame is left alone, so dt accumulates properly
   lastFrame = now;
@@ -4091,6 +4325,206 @@ function frame(now) {
 window.__petDraws = () => drawnFrames;
 window.__petFrameRate = () => ({ calmFor: +calmFor.toFixed(2), busy: busy(), cap: calmFor > CALM_AFTER ? FPS_CALM : FPS_ACTIVE });
 requestAnimationFrame(frame);
+
+// ---------------------------------------------------------------- motion clips
+// Converted humanoid clips (clips/**.json, from tools/clips/convert.mjs — the KAWAII pack) drive her
+// body; the procedural system keeps the states that have no clip (grabbed, point) and the head,
+// which stays additive so she still looks at the cursor. `motionMode` is 'auto', 'off', or a clip
+// name to loop for a look (the picker on the web app, window.__petClip in a console).
+const MC = {
+  base: 'Idle/Idle01_breathing',
+  idleCommon: ['Idle/Idle02_LookLeftAndRight', 'Idle/Idle03_LookAtHands', 'Idle/Idle04_LookAtFeet', 'Idle/Idle05_Stretch', 'Idle/Idle08_ComeUpWithAnIdea', 'Idle/Idle09_Waiting', 'Idle/Idle11_LookingBack', 'Idle/Idle12_LeaningForward', 'Idle/Idle15_TieShoelaces', 'Idle/Idle30_Stretch2', 'Idle/Idle35_FingerSnap', 'Idle/Idle40_CrossLegs', 'Idle/Idle43_HandOnHip', 'Idle/Idle45_WaveHandSlightly', 'Idle/Idle65_ThumbsUp', 'Idle/Idle72_LeanForward', 'Idle/Idle75_Pointing', 'Idle/Idle76_MotivatedPose', 'Idle/Idle90_HandsOnHipsConfident', 'Idle/Idle92_Shush1'],
+  idleRare: ['Idle/Idle_Dance/Idle13_Dance01', 'Idle/Idle_Dance/Idle14_Dance02', 'Idle/Idle_Dance/Idle23_Dance03', 'Idle/Idle_Dance/Idle24_Dance04', 'Idle/Idle54_CartwheelAndBackHandspring', 'Idle/Idle55_Backflip', 'Idle/Idle56_Handstand', 'Idle/Idle71_CatPose', 'Idle/Idle73_IdolPose', 'Idle/Idle20_TriplePose', 'Idle/Idle88_DoublePeacePose', 'Idle/Idle89_CheekPointPose', 'Idle/Idle100_BathroomUrgent', 'Idle/Idle85_Sneeze1', 'Idle/Idle95_Cold1', 'Idle/Idle97_Hot1', 'Idle/Idle41_CuteShyPose', 'Idle/Idle39_CuteArmUp', 'Idle/Idle18_Shy'],
+  idleUp: ['Idle/Idle_Dance/Idle13_Dance01', 'Idle/Idle_Dance/Idle23_Dance03', 'Idle/Idle36_Yay', 'Idle/Idle06_JumpAround', 'Idle/Idle73_IdolPose', 'Idle/Idle91_ThumbsUp'],
+  idleDown: ['Idle/Idle67_FeelDown', 'Idle/Idle09_Waiting', 'Idle/Idle37_Tsundere', 'Idle/Idle12_LeaningForward'],
+  sleepy: ['Idle/Idle99_Sleepy'],
+  walk: ['Locomotion/Walk/Walk01', 'Locomotion/Walk/Walk02', 'Locomotion/Walk/Walk03', 'Locomotion/Walk/Walk04', 'Locomotion/Walk/Walk05', 'Locomotion/Walk/Walk06'],
+  run: ['Locomotion/Run/Run01', 'Locomotion/Run/Run02', 'Locomotion/Run/Run03', 'Locomotion/Run/Run04', 'Locomotion/Run/Run05'],
+  skip: ['Locomotion/Skipping/Skipping01', 'Locomotion/Skipping/Skipping02'],
+  falling: ['Action/Jump01_Loop', 'Action/Jump02_Loop', 'Action/Jump03_Loop'],
+  landing: ['Action/Jump01_End'],
+  wave: ['Idle/Idle16_WaveHands', 'Idle/Idle44_GreetingBow', 'Idle/Idle52_Curtsy', 'Idle/Idle45_WaveHandSlightly'],
+  notice: ['Idle/Idle11_LookingBack', 'Idle/Idle68_Surprise', 'Idle/Idle29_Surprised'],
+  cheer: ['Idle/Idle25_Cheers', 'Idle/Idle36_Yay', 'Idle/Idle66_JumpForJoy', 'Idle/Idle74_Cheer', 'Idle/Idle06_JumpAround', 'Idle/Idle07_SpinningJump', 'Idle/Idle28_Laugh'],
+  comfort: ['Idle/Idle38_Cry', 'Idle/Idle67_FeelDown', 'Idle/Idle37_Tsundere', 'Idle/Idle27_Angry'],
+  gasp: ['Idle/Idle29_Surprised', 'Idle/Idle69_Surprise2', 'Idle/Idle26_Shout'],
+  wince: ['Combat/Combat_BareHands_Damage1', 'Combat/Combat_BareHands_Damage2', 'Combat/Combat_BareHands_Damage4', 'Idle/Idle17_StumbleAndFall', 'Idle/Idle83_StumbleAndFall2'],
+  guard: ['Idle/Idle19_ShyRefusal', 'Combat/Combat_BareHands_Idle01', 'Idle/Idle93_Shush2'],
+  dizzy: ['Idle/Idle84_StumbleAndFall3'],
+  sit: [
+    ['Idle/Idle_Sit/Idle53_Seiza_Start', ['Idle/Idle_Sit/Idle53_Seiza_Loop1', 'Idle/Idle_Sit/Idle53_Seiza_Loop2'], 'Idle/Idle_Sit/Idle53_Seiza_End'],
+    ['Idle/Idle_Sit/Idle46_SitFloor_Start', ['Idle/Idle_Sit/Idle46_SitFloor_Loop'], 'Idle/Idle_Sit/Idle46_SitFloor_End'],
+    ['Idle/Idle_Sit/Idle10_Sit_Start', ['Idle/Idle_Sit/Idle10_Sit_Loop'], 'Idle/Idle_Sit/Idle10_Sit_End'],
+  ],
+  sleep: ['Sleep/TransitionFromStandingPose/Sleep_Start', ['Sleep/Sleep_BendOneKnee_Loop', 'Sleep/Sleep_CurlUpSideways_Loop', 'Sleep/Sleep_TurnToTheSide_Loop'], null],
+  wake: ['Sleep/TransitionFromStandingPose/Sleep_End'],
+  // trade reactions: reactToTrade sets pet.reactKind before the state, the program picks from here
+  buy: ['Idle/Idle08_ComeUpWithAnIdea', 'Idle/Idle65_ThumbsUp', 'Idle/Idle91_ThumbsUp', 'Idle/Idle75_Pointing', 'Idle/Idle76_MotivatedPose', 'Idle/Idle35_FingerSnap', 'Idle/Idle90_HandsOnHipsConfident'],
+  bigBuy: ['Idle/Idle26_Shout', 'Idle/Idle74_Cheer', 'Idle/Idle68_Surprise', 'Idle/Idle29_Surprised', 'Idle/Idle76_MotivatedPose'],
+  sellFlat: ['Idle/Idle09_Waiting', 'Idle/Idle43_HandOnHip', 'Idle/Idle02_LookLeftAndRight', 'Idle/Idle04_LookAtFeet', 'Idle/Idle12_LeaningForward'],
+  profit: ['Idle/Idle36_Yay', 'Idle/Idle25_Cheers', 'Idle/Idle66_JumpForJoy', 'Idle/Idle74_Cheer', 'Idle/Idle28_Laugh', 'Idle/Idle06_JumpAround', 'Idle/Idle88_DoublePeacePose', 'Idle/Idle65_ThumbsUp', 'Idle/Idle_Pair/Idle21_HighFive1_1', 'Idle/Idle89_CheekPointPose'],
+  bigProfit: ['Idle/Idle07_SpinningJump', 'Idle/Idle_Dance/Idle13_Dance01', 'Idle/Idle_Dance/Idle14_Dance02', 'Idle/Idle_Dance/Idle23_Dance03', 'Idle/Idle_Dance/Idle24_Dance04', 'Idle/Idle54_CartwheelAndBackHandspring', 'Idle/Idle55_Backflip', 'Idle/Idle73_IdolPose', 'Idle/Idle66_JumpForJoy', 'Idle/Idle36_Yay'],
+  loss: ['Idle/Idle17_StumbleAndFall', 'Idle/Idle83_StumbleAndFall2', 'Idle/Idle84_StumbleAndFall3'],
+  bigLoss: ['Combat/Combat_BareHands_Damage4', 'Idle/Idle84_StumbleAndFall3', 'Idle/Idle17_StumbleAndFall', 'Idle/Idle83_StumbleAndFall2'],
+  guardTrade: ['Idle/Idle19_ShyRefusal', 'Idle/Idle93_Shush2', 'Idle/Idle27_Angry', 'Idle/Idle92_Shush1'],
+  milestone: ['Idle/Idle_Dance/Idle13_Dance01', 'Idle/Idle_Dance/Idle23_Dance03', 'Idle/Idle_Dance/Idle24_Dance04', 'Idle/Idle36_Yay', 'Idle/Idle07_SpinningJump', 'Idle/Idle73_IdolPose'],
+  speak: ['Speak/Speak01_Normal', 'Speak/Speak02_Explaining', 'Speak/Speak03_Excited', 'Speak/Speak04_Calm', 'Speak/Speak07_Chatty', 'Speak/Speak10_Shy'],
+};
+// What she says as a clip starts — the fidget or reaction gets its own voice, unless a slot sound
+// (the trade itself) played a moment ago.
+const CLIP_VOICE = {
+  'Idle/Idle08_ComeUpWithAnIdea': ['hirameita'], 'Idle/Idle17_StumbleAndFall': ['hyaa', 'uwaa', 'a'], 'Idle/Idle83_StumbleAndFall2': ['gyaaa', 'uwaa'], 'Idle/Idle84_StumbleAndFall3': ['gyaaa', 'a'],
+  'Idle/Idle38_Cry': ['ueeen', 'gusuhikkuhikku', 'dattedatte', 'shikushiku'], 'Combat/Combat_BareHands_Damage4': ['gyaaa', 'shock'], 'Combat/Combat_BareHands_DamageAll': ['gyaaa', 'uwaan'],
+  'Combat/Combat_BareHands_Damage1': ['u', 'uu'], 'Combat/Combat_BareHands_Damage2': ['uu2', 'u'],
+  'Idle/Idle36_Yay': ['yattaa', 'yattane'], 'Idle/Idle25_Cheers': ['banzai', 'yattaa'], 'Idle/Idle66_JumpForJoy': ['yattane', 'ureshii'], 'Idle/Idle74_Cheer': ['furefure', 'ganbare'],
+  'Idle/Idle28_Laugh': ['ahaha', 'ahaha2', 'kyahaha'], 'Idle/Idle26_Shout': ['banzai', 'tou'], 'Idle/Idle07_SpinningJump': ['yoho', 'wow'], 'Idle/Idle06_JumpAround': ['yoho', 'wow', 'ei'],
+  'Idle/Idle54_CartwheelAndBackHandspring': ['tou', 'ei'], 'Idle/Idle55_Backflip': ['ei', 'tou'], 'Idle/Idle56_Handstand': ['yo'],
+  'Idle/Idle_Dance/Idle13_Dance01': ['ufufu', 'kyahaha'], 'Idle/Idle_Dance/Idle14_Dance02': ['ufufu2', 'ahaha'], 'Idle/Idle_Dance/Idle23_Dance03': ['kyahaha', 'ufufu'], 'Idle/Idle_Dance/Idle24_Dance04': ['ahaha', 'ufufu2'],
+  'Idle/Idle19_ShyRefusal': ['chottomatte', 'akan', 'nandeyanen'], 'Idle/Idle93_Shush2': ['shitsukoinaa'], 'Idle/Idle92_Shush1': ['nn'], 'Idle/Idle27_Angry': ['mouokotta', 'mukka', 'baka'], 'Idle/Idle37_Tsundere': ['moushiranai', 'kechi'],
+  'Idle/Idle67_FeelDown': ['sonnaa', 'uu', 'shock'], 'Idle/Idle29_Surprised': ['ee', 'uso'], 'Idle/Idle68_Surprise': ['a', 'o'], 'Idle/Idle69_Surprise2': ['ee', 'giku'],
+  'Idle/Idle99_Sleepy': ['akubi', 'munya'], 'Idle/Idle05_Stretch': ['akubi', 'nn'], 'Idle/Idle30_Stretch2': ['akubi'], 'Idle/Idle100_BathroomUrgent': ['chottomazuikamo', 'gege'],
+  'Idle/Idle44_GreetingBow': ['konnichiha', 'ohayou', 'hazimemashite'], 'Idle/Idle16_WaveHands': ['yoho', 'hi', 'yaa'], 'Idle/Idle52_Curtsy': ['hazimemashite', 'doumodesu'], 'Idle/Idle45_WaveHandSlightly': ['yaa', 'hi'],
+  'Idle/Idle_Pair/Idle21_HighFive1_1': ['yaa', 'yo'], 'Idle/Idle73_IdolPose': ['kyaayadahazukashii', 'ehehe'], 'Idle/Idle88_DoublePeacePose': ['ehehe', 'yattane'], 'Idle/Idle89_CheekPointPose': ['ehehe', 'ufufu'],
+  'Idle/Idle41_CuteShyPose': ['ehehe', 'ufufu'], 'Idle/Idle18_Shy': ['kyaayadahazukashii', 'ehehe'], 'Idle/Idle39_CuteArmUp': ['ehehe'], 'Idle/Idle35_FingerSnap': ['yo'], 'Idle/Idle65_ThumbsUp': ['sonotyoushisonotyousi', 'thankyou'], 'Idle/Idle91_ThumbsUp': ['thankyou', 'maidoari'],
+  'Idle/Idle75_Pointing': ['o', 'oo'], 'Idle/Idle76_MotivatedPose': ['ganbare', 'furefure'], 'Idle/Idle90_HandsOnHipsConfident': ['haihai', 'haihaihaai'], 'Idle/Idle09_Waiting': ['nn'], 'Idle/Idle11_LookingBack': ['are', 'n'],
+  'Idle/Idle03_LookAtHands': ['hee'], 'Idle/Idle04_LookAtFeet': ['are'], 'Idle/Idle12_LeaningForward': ['nn', 'hee'], 'Idle/Idle71_CatPose': ['nyaa'], 'Idle/Idle95_Cold1': ['uu'], 'Idle/Idle97_Hot1': ['uu2'],
+  'Idle/Idle15_TieShoelaces': ['n'], 'Idle/Idle85_Sneeze1': ['a'], 'Idle/Idle20_TriplePose': ['yo', 'ei', 'tou'], 'Idle/Idle72_LeanForward': ['hee'],
+  'Sleep/TransitionFromStandingPose/Sleep_Start': ['oyasumi', 'akubi'], 'Sleep/TransitionFromStandingPose/Sleep_End': ['yobimashita', 'hai', 'munya'],
+  'Idle/Idle_Sit/Idle53_Seiza_Start': ['n'], 'Idle/Idle_Sit/Idle46_SitFloor_Start': ['nn'], 'Idle/Idle_Sit/Idle10_Sit_Start': ['n'],
+};
+clips.setOnStart((name) => {
+  if (!cfg || cfg.muted || quiet('Sounds') || T - lastSoundAt < 1.5) return;
+  const packed = VOICE_PACK.clips[name];
+  const f = packed && packed.length && soundFile(pick(packed).slice(5)) || (CLIP_VOICE[name] ? soundFile('girl-' + pick(CLIP_VOICE[name]) + '.mp3') : null);
+  if (!f) return;
+  lastSoundAt = T; playFile(f, 0.9);
+});
+const MOTION_CLIPS = [...new Set(Object.values(MC).flat(3).filter((x) => typeof x === 'string').flatMap((x) => (x.startsWith('Speak/') ? [x + '_Start', x + '_Loop', x + '_End'] : [x])))];
+let motionMode = 'off';   // the KAWAII clip pack is switched off; __petClip('auto') brings it back
+let motionIdleNext = 0;
+let motionReady = false;
+let motionYaw = null;      // a facing the current program asks for (lying down goes side-on)
+let mp = null;             // the running program for the current state
+clips.setClipBase(/^https?:/.test(location.protocol) ? 'assets/clips/' : 'clips/');
+function motionPreload() {
+  if (motionReady) return;
+  const first = [MC.base, MC.walk[0], MC.falling[0], MC.landing[0]];
+  Promise.all(first.map((n) => clips.loadClip(n))).then(() => {
+    motionReady = true; bridge.log('motion: ready (' + MOTION_CLIPS.length + ' clips mapped)');
+    // the rest warm in the background, one at a time, so nothing waits on the first use
+    const rest = MOTION_CLIPS.filter((n) => !first.includes(n));
+    (function next(i) { if (i >= rest.length) return; clips.loadClip(rest[i]).catch((e) => bridge.log('motion: ' + e.message)).then(() => setTimeout(() => next(i + 1), 30)); })(0);
+  }).catch((e) => bridge.log('motion clips: ' + e.message));
+}
+function motionOn() { return motionReady && motionMode !== 'off'; }
+// A reaction that has a clip keeps its state until the clip has played out (capped, so a clip that
+// never arrives cannot freeze her).
+function motionHold() {
+  if (!motionOn() || motionMode !== 'auto' || !mp) return false;
+  const oneShot = mp.kind === 'once' || (mp.kind === 'seq' && mp.phase === 'end');
+  return oneShot && pet.t < 12 && (!clips.current() || !clips.clipEnded());
+}
+const pickFrom = (list) => list[Math.floor(Math.random() * list.length)];
+function motionProgram(st) {
+  switch (st) {
+    case 'idle': return { kind: 'idle' };
+    case 'walk': return { kind: 'walk', clip: pickFrom(pet.run ? MC.run : moodUp() && Math.random() < 0.5 ? MC.skip : MC.walk) };
+    case 'falling': return { kind: 'loop', clip: pickFrom(MC.falling), fade: 0.15 };
+    case 'landing': return { kind: 'once', clip: MC.landing[0], fade: 0.1 };
+    case 'wave': case 'notice': case 'cheer': case 'comfort': case 'gasp': case 'wince': case 'guard': case 'dizzy': {
+      const pool = (pet.reactKind && MC[pet.reactKind]) || MC[st];
+      pet.reactKind = null;
+      return { kind: 'once', clip: pickFrom(pool) };
+    }
+    case 'sit': { const q = pickFrom(MC.sit); return { kind: 'seq', start: q[0], loops: q[1], end: q[2], phase: 'start', endsAt: () => pet.sitUntil }; }
+    case 'sleep': return { kind: 'seq', start: MC.sleep[0], loops: MC.sleep[1], end: null, phase: 'start', endsAt: () => Infinity, lie: true };
+    case 'wake': return { kind: 'once', clip: pickFrom(MC.wake), lie: true };
+    default: return { kind: 'none' };   // grabbed, point: her procedural body
+  }
+}
+// Lying down (sleep, and the get-up after it) goes along the screen, not into it: turn her so the
+// hips→head line runs along X. Upright she is turned side-on first, so she lies down already facing
+// the right way instead of spinning on the floor.
+const _lh = new THREE.Vector3(), _ld = new THREE.Vector3(), _lf = new THREE.Vector3(), _lq = new THREE.Quaternion();
+function lieYaw() {
+  const h = model.bones.hips, d = model.bones.head;
+  if (!h || !d) return null;
+  h.getWorldPosition(_lh); d.getWorldPosition(_ld);
+  const bx = _ld.x - _lh.x, bz = _ld.z - _lh.z, by = _ld.y - _lh.y;
+  if (bx * bx + bz * bz < by * by * 0.5) return pet.yaw;   // still mostly upright: wait for the fall
+  let phi = Math.atan2(bz, bx);
+  if (phi > Math.PI / 2) phi -= Math.PI; else if (phi < -Math.PI / 2) phi += Math.PI;
+  // of the two ways to lie along the screen, the one that keeps her front toward the viewer
+  h.getWorldQuaternion(_lq); _lf.set(0, 0, 1).applyQuaternion(_lq);
+  if (_lf.x * _lf.x + _lf.z * _lf.z > 0.1) {
+    const fz = -_lf.x * Math.sin(phi) + _lf.z * Math.cos(phi);   // her forward's z after the turn
+    if (fz < 0) phi += phi > 0 ? -Math.PI : Math.PI;
+  }
+  return pet.yaw + phi;
+}
+function pickIdleVariant() {
+  const r = Math.random();
+  if (lateHour() && r < 0.3) return pickFrom(MC.sleepy);
+  if (moodUp() && r < 0.4) return pickFrom(MC.idleUp);
+  if (moodDown() && r < 0.4) return pickFrom(MC.idleDown);
+  if (r < 0.12) return pickFrom(MC.idleRare);
+  return pickFrom(MC.idleCommon);
+}
+function motionTick(st, dt) {
+  motionYaw = null;
+  if (!motionReady || motionMode === 'off') { if (clips.current()) clips.stop(0.3); mp = null; return; }
+  if (motionMode !== 'auto') { clips.play(motionMode, { loop: true, fade: 0.3 }); mp = null; return; }
+  if (!mp || mp.state !== st) mp = Object.assign({ state: st }, motionProgram(st));
+  clips.setHeadAdditive(st !== 'sleep');
+  const cur = clips.current();
+  if (mp.lie) motionYaw = lieYaw();
+  switch (mp.kind) {
+    case 'none': if (cur) clips.stop(0.25); break;
+    case 'loop': clips.play(mp.clip, { loop: true, fade: mp.fade ?? 0.2 }); break;
+    case 'once': clips.play(mp.clip, { loop: false, fade: mp.fade ?? 0.2 }); break;
+    case 'walk': {
+      const info = clips.clipInfo(mp.clip);
+      // the clip's own pace (hip heights per second) against how fast she is actually moving
+      const along = pet.walkV || 0;
+      const rate = info && info.speed ? clamp(along / (info.speed * model.hipH), 0.25, 2.5) : 1;
+      clips.play(mp.clip, { loop: true, fade: 0.25, rate });
+      break;
+    }
+    case 'seq': {
+      if (mp.phase === 'start') clips.play(mp.start, { loop: false, fade: 0.3, onEnd: () => { mp.phase = 'loop'; } });
+      else if (mp.phase === 'loop') {
+        if (!mp.loopClip) mp.loopClip = pickFrom(mp.loops);
+        clips.play(mp.loopClip, { loop: true, fade: 0.45 });
+        if (mp.end) { const info = clips.clipInfo(mp.end); if (T > mp.endsAt() - (info ? info.duration : 1.5)) mp.phase = 'end'; }
+      } else clips.play(mp.end, { loop: false, fade: 0.3 });
+      break;
+    }
+    case 'idle': {
+      if (pet.micro) pet.micro = null;           // the clips are her fidgets now
+      // a variation runs to its end, then the base breathing for a while
+      if (mp.variant) {
+        if (cur === mp.variant && clips.clipEnded()) { mp.variant = null; motionIdleNext = T + rand(4, 10); }
+        else { clips.play(mp.variant, { loop: false, fade: 0.35 }); break; }
+      }
+      // talking: a speak clip while her bubble is up
+      if (mp.speak || (bubbleUntil > T && !mp.variant)) {
+        if (!mp.speak) { mp.speak = pickFrom(MC.speak); mp.speakPhase = 'start'; }
+        const sp = mp.speak;
+        if (mp.speakPhase === 'start') clips.play(sp + '_Start', { loop: false, fade: 0.3, onEnd: () => { mp.speakPhase = 'loop'; } });
+        else if (mp.speakPhase === 'loop') { clips.play(sp + '_Loop', { loop: true, fade: 0.3 }); if (bubbleUntil <= T) mp.speakPhase = 'end'; }
+        else clips.play(sp + '_End', { loop: false, fade: 0.3, onEnd: () => { mp.speak = null; motionIdleNext = T + rand(3, 7); } });
+        break;
+      }
+      if (T > motionIdleNext && cur === MC.base) { mp.variant = pickIdleVariant(); break; }
+      clips.play(MC.base, { loop: true, fade: 0.35 });
+      if (!motionIdleNext) motionIdleNext = T + rand(3, 6);
+      break;
+    }
+  }
+}
+window.__petLens = (fov, tilt) => { if (fov) FOV = fov; if (tilt != null) TILT = tilt; layout(); };
+window.__petClip = (name) => { motionMode = !name || name === 'auto' ? 'auto' : name; mp = null; };
+window.__petClips = () => ({ bust: { pushes: clips.bustDbg.pushes, maxAngle: +clips.bustDbg.maxAngle.toFixed(3) }, mode: motionMode, ready: motionReady, current: clips.current(), t: +clips.clipTime().toFixed(2), w: +clips.clipWeight().toFixed(2), program: mp && { kind: mp.kind, phase: mp.phase, variant: mp.variant, speak: mp.speak }, list: MOTION_CLIPS });
 
 // ---------------------------------------------------------------- dev/test hooks
 window.__petInfo = () => {
@@ -4201,6 +4635,68 @@ window.__petAdvance = (sec) => new Promise((resolve) => {
 });
 window.__petResume = () => { paused = false; lastFrame = performance.now(); };
 // synchronous synthetic mouse input for the self-test
+// Would a press at (x, y) land on her right now — her body, or a badge on her board? The browser
+// bridge asks this at press time, because its canvas is only as current as the last frame: after a
+// quick flick of the mouse the canvas can still be catching the pointer where she no longer is,
+// and a press there must be treated the way the desktop treats it — passed through, not read as
+// "put everything away".
+// The website drives her through these: walk to a spot on the page, a hop, a poke on the nose.
+// Screen x in, world units inside; she goes on foot, so nothing here teleports her.
+window.__petWalkTo = (sx) => {
+  if (!model || !pet.onGround || tourActive) return false;
+  if (!['idle', 'walk', 'sit', 'wave', 'point', 'notice'].includes(pet.state)) return false;
+  const tx = clamp(toWorld(sx, 0).x, minX + 0.3, maxX - 0.3);
+  if (Math.abs(tx - pet.x) < 0.2) return false;
+  if (pet.state !== 'walk') setState('walk');
+  pet.walkTarget = tx; pet.facing = Math.sign(tx - pet.x) || 1; pet.t = 0;
+  pet.lastInteraction = T;
+  return true;
+};
+window.__petJump = () => { pet.lastInteraction = T; doJump(); };
+// point at a spot on the screen: which side it is on, and how far above her shoulder it sits
+window.__petPointAt = (sx, sy, secs) => {
+  if (!model) return false;
+  const sp = toScreen(pet.x, pet.y);
+  pet.pointTarget = { x: sx, y: sy };
+  if (pet.state !== 'point') {
+    // the arm: level for anything near her own height, raised for something well above her
+    const shoulderY = sp.y - sizePx * 0.62;
+    pet.pointUp = clamp((shoulderY - sy) / (sizePx * 0.9), -0.35, 1.4);
+  }
+  return window.__petPoint(sx >= sp.x ? 1 : -1, secs);
+};
+// pinned: she keeps her place (and stops wandering off) until let go
+window.__petStay = (v) => { pet.stay = !!v; if (v) { pet.walkTarget = pet.x; if (pet.state === 'walk') setState('idle'); } };
+window.__petResetTrading = () => {
+  resetTradingState(); liveMints.clear(); lastLossSell.clear(); demoPos = null; paperFeed = false; relayTrades = 0;
+  if (sign && sign.phase !== 'hidden') dismissSign();
+};
+window.__petPoint = (dir, secs) => {
+  if (!model || !pet.onGround) return false;
+  pet.pointDir = dir >= 0 ? 1 : -1; pet.pointUntil = T + (secs || 6); pet.lastInteraction = T; if (pet.pointUp == null) pet.pointUp = 0;
+  // already pointing: only the aim and the deadline move — restarting the pose would make her
+  // arm drop and swing up again every time the target is refreshed
+  if (['idle', 'walk', 'sit', 'wave', 'notice', 'point'].includes(pet.state)) { if (pet.state !== 'point') setState('point'); return true; }
+  return false;
+};
+window.__petUnpoint = () => { pet.pointUntil = 0; pet.pointTarget = null; if (pet.state === 'point') setState('idle'); };
+// The website's first visit: she is already dozing when she first appears — the sleep pose is
+// eased into over a couple of seconds, so the simulation is run ahead before the first frame is
+// painted, and nothing has touched her recently enough to wake her. __petWake is the cue.
+window.__petSleepIn = () => {
+  if (!model) return false;
+  setState('sleep');
+  pet.lastInteraction = T - 60; pet.wakeNear = 0; pet.micro = null; pet.nextActionAt = T + 999;
+  for (let i = 0; i < 180; i++) step(1 / 60);
+  return true;
+};
+window.__petWake = () => { pet.lastInteraction = T; if (pet.state === 'sleep') setState('wake'); };
+window.__petPoke = () => { pet.lastInteraction = T; pet.pokeAt = T; };
+window.__petHitAt = (x, y) => {
+  if (!model) return null;
+  updateCursor(x, y);
+  return hitTest() || (sign ? signHitTest().badge : null) || null;
+};
 window.__petMouse = (type, x, y, button = 0) => {
   window.dispatchEvent(new MouseEvent(type, { clientX: x, clientY: y, button, buttons: type === 'mouseup' ? 0 : 1, bubbles: true, cancelable: true }));
 };

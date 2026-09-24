@@ -18,3 +18,14 @@ They ask that the files not be redistributed as a sound library on their own.
   girl-n / nn / hai / haihai / yaa / yoho                                nods, hello
   girl-akubi / munya / suyasuya                                          yawn, sleepy
   girl-nyaa / mukka / ganbatte / gomenne                                 cat, grumpy, "do your best", "sorry"
+
+Added 2026-09-22 (same set, same terms): girl-hirameita (I've got an idea!), yo / ei / tou (shouts),
+thankyou, arigatou, sonotyoushisonotyousi (that's the way!), tottemouresiidesu, panpakapan (fanfare),
+kyaayadahazukashii (kyaa, embarrassing!), gege / chottomazuikamo (uh-oh), uso (no way…),
+gusuhikkuhikku / dattedatte (sobbing), moushiranai (I'm done with you!), chottomatte (wait!),
+kora / shitsukoinaa / baka / akan / nandeyanen / mouokotta / kechi (angry), ganbare / atochotto /
+furefure (cheering), yobimashita (did you call?), hi / ohayou / konnichiha / hazimemashite /
+mataashita / oyasumi / otsukaresamadeshita / doumodesu / maidoari (greetings), ureshiinaa, baa,
+haihaihaai.
+Trade slots that still hold their default clip play a random one from a pool (SOUND_POOLS in
+src/renderer.js); a clip that starts a fidget or reaction brings its own line (CLIP_VOICE).

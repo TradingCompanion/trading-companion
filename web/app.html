@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Yui</title>
+<link rel="icon" href="favicon.ico">
+<link rel="icon" type="image/png" sizes="256x256" href="assets/icon.png">
+<link rel="apple-touch-icon" href="assets/yui-pfp.png">
+<!-- ============================================================================================
+     The app, in a tab.
+
+     This page is the browser twin of the desktop window: the same four elements the app's
+     index.html has, the same renderer bundle, the same panel, and settings that start from the
+     app's own defaults (yui-defaults.js is generated from main.js). There is no landing page
+     around her here — that is web/index.html, for when she moves to her real domain. This one is
+     served straight off the relay box so she can be tried, dressed and pointed at a wallet before
+     that day.
+     ============================================================================================ -->
+<script>
+window.YUI_CONFIG = {
+  // Her trade feed. Blank host = the host this page came from, on the relay's port; the scheme
+  // follows the page (ws:// from http, wss:// from https). Set `relay` to force one exact URL.
+  relayHost: '',
+  relayPort: 9998,
+  relay:     ''
+};
+</script>
+<link rel="stylesheet" href="pet.css">
+<style>
+  /* The app's window is transparent over the desktop. A tab has no desktop, so she gets a quiet
+     one: dark, a little depth at the bottom where she stands, nothing that competes with her. */
+  html, body { height: 100%; margin: 0; overflow: hidden; }
+  body {
+    background:
+      radial-gradient(120% 70% at 50% 100%, #1a1626 0%, #0e0b16 55%, #08060e 100%);
+    color: #e8e4f0;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  /* the floor line she stands on — the taskbar's edge, in spirit */
+  body::after {
+    content: ""; position: fixed; left: 0; right: 0; bottom: 0; height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,.14), transparent);
+    pointer-events: none;
+  }
+  #loading { position: fixed; inset: 0; display: grid; place-items: center; font-size: 14px; color: #9a93ab; letter-spacing: .04em; }
+  #loading .bar { width: 220px; height: 3px; background: rgba(255,255,255,.08); border-radius: 2px; overflow: hidden; margin-top: 14px; }
+  #loading .bar i { display: block; height: 100%; width: 0; background: #b48cff; transition: width .15s linear; }
+  #loading > div { text-align: center; }
+#yui-stage{opacity:0;transition:opacity .6s ease}
+html.yui-ready #yui-stage{opacity:1}
+</style>
+</head>
+<body>
+<div id="loading"><div>Loading…<div class="bar"><i id="loadBar"></i></div></div></div>
+<div id="bubble"></div>
+<div id="tour" hidden></div>
+<div id="panel" hidden></div>
+<script src="yui-defaults.js"></script>
+<script src="yui-sounds.js"></script>
+<script src="yui-boot.js"></script>
+<script src="yui-web.js"></script>
+<script>
+(function () {
+  var bar = document.getElementById('loadBar');
+  YuiWeb.start({
+    model: 'assets/yui.vrm',
+    sounds: window.YUI_SOUNDS,
+    onProgress: function (p) { bar.style.width = Math.round(p * 100) + '%'; }
+  }).catch(function (e) {
+    document.querySelector('#loading > div').textContent = "She couldn't load — refresh the page.";
+    console.error('[yui]', e);
+  });
+})();
+</script>
+</body>
+</html>

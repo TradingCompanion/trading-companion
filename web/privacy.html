@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy — Yui, Trading Companion</title>
+<style>
+  html, body { margin: 0; background: #0d0b12; color: #e8e4f0; font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 720px; margin: 0 auto; padding: 48px 20px 80px; }
+  h1 { font-size: 28px; margin: 0 0 6px; } .sub { color: #a79fbb; margin: 0 0 32px; }
+  h2 { font-size: 18px; margin: 32px 0 8px; color: #ff6fae; }
+  a { color: #b48cff; } code { background: rgba(255,255,255,.07); padding: 1px 6px; border-radius: 6px; }
+</style>
+</head>
+<body><main>
+<h1>Privacy policy</h1>
+<p class="sub">Yui — Trading Companion (Chrome extension and desktop app) · tradingcompanion.fun · effective 14 September 2026</p>
+
+<h2>What she is</h2>
+<p>Yui is a 3D companion who stands on your trading terminal and reacts to trades made by a wallet you choose to watch. She is cosmetic. She never connects to a wallet, never asks you to sign anything, and cannot move funds.</p>
+
+<h2>What is collected</h2>
+<p><b>A public Solana wallet address</b>, only if you type one in. It is sent over a WebSocket to our relay server (<code>relay.tradingcompanion.fun</code>) so the relay can forward that wallet's public on-chain trades back to her. The relay keeps the address in memory for the length of the connection and does not store it afterwards.</p>
+<p><b>Your settings</b> — her look, size, sounds, your name for her to use, and the wallet address — are stored locally in your browser's extension storage (<code>chrome.storage</code>). They never leave your device except for the wallet address described above.</p>
+<p>The relay logs connection metadata (IP address, timestamps) for rate limiting and abuse prevention, retained for a short period only.</p>
+
+<h2>What is not collected</h2>
+<p>No browsing history, no page content from the sites she appears on, no keystrokes, no private keys, no seed phrases, no personal information, no analytics, no advertising identifiers. She reads nothing from the trading site itself; everything she reacts to comes from the public blockchain via the relay.</p>
+
+<h2>Permissions</h2>
+<p>The extension asks to run on a fixed list of trading terminals (for example axiom.trade and pump.fun) so she can appear on them, and for <code>storage</code> to remember your settings. Nothing else.</p>
+
+<h2>Third parties</h2>
+<p>None. The relay is operated by us. No data is sold or shared.</p>
+
+<h2>Removing your data</h2>
+<p>Uninstalling the extension deletes all local settings. Clearing the wallet field and disconnecting stops any address being sent to the relay.</p>
+
+<h2>Contact</h2>
+<p><a href="https://tradingcompanion.fun">tradingcompanion.fun</a> · <a href="https://github.com/TradingCompanion/trading-companion">github.com/TradingCompanion/trading-companion</a></p>
+</main></body></html>

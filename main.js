@@ -27,22 +27,22 @@ function listSoundFiles() {
 let win = null;
 let tray = null;
 const DEFAULT_SOUNDS = {
-  // real clips from the bundled sounds/ folder (Sound Effect Lab "cheerful girl" set); synth phrases as fallback names
-  profit: 'file:girl-yattaa.mp3', bigProfit: 'file:girl-kyahaha.mp3', loss: 'file:girl-uu.mp3', bigLoss: 'file:girl-ueeen.mp3',
-  buy: 'file:girl-oo.mp3', sell: 'file:girl-n.mp3', connect: 'file:girl-hai.mp3', click: 'file:girl-ehehe.mp3', hover: 'file:girl-nn.mp3',
-  grab: 'file:girl-hyaa.mp3', throw: 'file:girl-kyaaa.mp3', land: 'file:girl-a.mp3', dizzy: 'file:girl-uu2.mp3', jump: 'file:girl-wow.mp3', stretch: 'file:girl-akubi.mp3',
-  cheerUp: 'file:girl-ganbatte.mp3',
+  // her ElevenLabs voice pack (tools/voice-pack): the first line of each group; a slot left on its
+  // default plays any line of that group. The free Sound Effect Lab clips (girl-*) stay selectable.
+  profit: 'file:yui-profit-1.mp3', bigProfit: 'file:yui-bigProfit-1.mp3', loss: 'file:yui-loss-1.mp3', bigLoss: 'file:yui-bigLoss-1.mp3',
+  buy: 'file:yui-buy-1.mp3', sell: 'file:yui-sellFlat-1.mp3', connect: 'file:yui-connect-1.mp3', click: 'file:yui-click-1.mp3', hover: 'file:yui-hover-1.mp3',
+  grab: 'file:yui-grab-1.mp3', throw: 'file:yui-throw-1.mp3', land: 'file:yui-land-1.mp3', dizzy: 'file:yui-dizzy-1.mp3', jump: 'file:yui-jump-1.mp3', stretch: 'file:yui-stretch-1.mp3',
+  cheerUp: 'file:yui-cheerUp-1.mp3',
 };
 // refreshed defaults for the trade slots (older saved settings still carry the synth names)
-const TRADE_SLOT_DEFAULTS = { profit: 'file:girl-yattaa.mp3', bigProfit: 'file:girl-kyahaha.mp3', loss: 'file:girl-sonnaa.mp3', bigLoss: 'file:girl-uu.mp3', buy: 'file:girl-oo.mp3', sell: 'file:girl-n.mp3', cheerUp: 'file:girl-ganbatte.mp3' };
-Object.assign(DEFAULT_SOUNDS, TRADE_SLOT_DEFAULTS);
+const TRADE_SLOT_DEFAULTS = { profit: DEFAULT_SOUNDS.profit, bigProfit: DEFAULT_SOUNDS.bigProfit, loss: DEFAULT_SOUNDS.loss, bigLoss: DEFAULT_SOUNDS.bigLoss, buy: DEFAULT_SOUNDS.buy, sell: DEFAULT_SOUNDS.sell, cheerUp: DEFAULT_SOUNDS.cheerUp };
 // The public relay. It needs no token — a token inside a public download is not a secret, so it
 // runs on caps instead (a few connections and a few wallets per address). Paste a wallet and she
 // works; nothing else to set up.
 //
 // The hostname is preferred and the address is only a fallback, so that moving the relay to
 // another box is a DNS change rather than a dead build for everyone who already downloaded her.
-const PUBLIC_RELAY_HOST = 'relay.trenchwaifu.fun';
+const PUBLIC_RELAY_HOST = 'relay.tradingcompanion.fun';
 const PUBLIC_RELAY_PORT = 9998;
 const PUBLIC_RELAY_FALLBACK = 'ws://192.248.179.126:9998';
 let PUBLIC_RELAY = PUBLIC_RELAY_FALLBACK;
@@ -71,11 +71,11 @@ function defaultSettings() { return {
   // Her figure. Mirrored by FIG in src/renderer.js — change both.
   bust: 0.36, jiggle: 1,             // bust size and how much it bounces (0..1)
   hips: 0.36, waist: 0, thighs: 0.6, headSize: 1,      // body proportions; 0.5 is the model as authored
-  outfit: 'uniform', cleavage: 0.4,  // outfit colour scheme and neckline depth (0..1)
+  outfit: 'yui', cleavage: 0.4,  // outfit colour scheme and neckline depth (0..1)
   topStyle: 'full', bottomStyle: 'skirt', skirtLen: 0.3, bow: false,
-  hairColor: '#000000', eyeColor: '#ffffff',   // '' = the model's own colour
+  hairColor: '#3d1f73', eyeColor: '#a597f0',   // lookV3: the logo's colours   // '' = the model's own colour
   customVest: '#1a1a20', customSkirt: '#1a1a20', customBow: '#f2c73f',
-  sign: true, signSize: 0.5, signStyle: 10, signHold: 'two', solPrice: 101.95, // the PnL sign she holds (10 = Aurora glass)
+  sign: true, signSize: 0.5, signStyle: 10, signHold: 'two', solPrice: 113, // the PnL sign she holds (10 = Aurora glass)
   wallets: '', relayUrl: '', relayToken: DEFAULT_RELAY_TOKEN, autoConnect: true,
   sounds: { ...DEFAULT_SOUNDS },
   // the companion: her "are you sure?" look, the sell nudge, where a coin opens, quiet mode, the screen she lives on
@@ -108,6 +108,14 @@ function loadSettings() {
       const d = defaultSettings();
       for (const k of ['bust', 'jiggle', 'cleavage', 'skirtLen', 'hips', 'waist', 'thighs', 'headSize', 'outfit', 'topStyle', 'bottomStyle', 'bow', 'hairColor', 'eyeColor', 'sizePx']) saved[k] = d[k];
       saved.lookV2 = true;
+    }
+    // 2026-09-24: her colours follow the logo (violet hair, lavender eyes, the violet outfit); once
+    // 2026-09-24: the fallback SOL price moved 101.95 -> 113; an untouched old default follows it
+    if (saved.solPrice === 101.95) saved.solPrice = 113;
+    if (!saved.lookV3) {
+      const d = defaultSettings();
+      for (const k of ['outfit', 'hairColor', 'eyeColor']) saved[k] = d[k];
+      saved.lookV3 = true;
     }
     Object.assign(settings, saved, { sounds });
     if (!settings.relayToken && DEFAULT_RELAY_TOKEN) settings.relayToken = DEFAULT_RELAY_TOKEN;

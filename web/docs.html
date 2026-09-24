@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Yui — Docs</title>
+<meta name="description" content="Everything about Yui, the Trading Companion: what she is, how she reads your trades, the PnL board, her look, the relay, privacy, and how to run your own.">
+<meta property="og:title" content="Yui — Docs">
+<meta property="og:image" content="https://tradingcompanion.fun/assets/yui-pfp.png">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://tradingcompanion.fun/assets/yui-pfp.png">
+<link rel="icon" href="favicon.ico">
+<link rel="icon" type="image/png" sizes="256x256" href="assets/icon.png">
+<link rel="apple-touch-icon" href="assets/yui-pfp.png">
+<script>
+window.YUI_CONFIG = {
+  x:        'https://x.com/trenchwaifu',
+  github:   'https://github.com/TradingCompanion/trading-companion',
+  download: 'downloads/Yui-0.1.0-win-x64.zip',
+  relayHost: '', relayPort: 9998,
+  relay: location.protocol === 'https:' ? 'wss://relay.tradingcompanion.fun' : '',
+  // She reads along: a little smaller than on the front page, in the left gutter, and the docs
+  // have their own first-run story (this page), so her tour stays off here — the ❔ replays it.
+  spawn: 0.09,
+  defaults: { tourDone: true }
+};
+</script>
+<style>
+@font-face{font-family:"Rubik";src:url("fonts/Rubik.woff2") format("woff2");font-weight:300 900;font-display:swap}
+@font-face{font-family:"Outfit";src:url("fonts/Outfit.woff2") format("woff2");font-weight:100 900;font-display:swap}
+:root{--ink:#08060e;--glass:rgba(13,11,18,.72);--card:rgba(255,255,255,.042);--card2:rgba(255,255,255,.07);--line:rgba(255,255,255,.085);--line2:rgba(255,255,255,.17);
+  --txt:#f4eefb;--dim:#a99bc2;--faint:#786a91;--pink:#ff6fae;--pink2:#f6a5c6;--violet:#7c5cff;--violet2:#a97bff;--teal:#34d5c9;--green:#3fe0a5;--red:#ff5c8a;--gold:#f2c73f;
+  --display:"Outfit",system-ui,sans-serif;--body:"Rubik","Segoe UI",system-ui,sans-serif}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html{scroll-behavior:smooth;scroll-padding-top:90px}
+body{margin:0;background:var(--ink);color:var(--txt);font:16px/1.7 var(--body);-webkit-font-smoothing:antialiased;overflow-x:hidden}
+body::before{content:"";position:fixed;inset:0;z-index:-2;pointer-events:none;background:radial-gradient(60% 50% at 10% 0%,rgba(255,111,174,.16),transparent 60%),radial-gradient(50% 45% at 90% 10%,rgba(124,92,255,.18),transparent 60%),var(--ink)}
+a{color:var(--pink2)}
+h1,h2,h3,h4{font-family:var(--display);letter-spacing:-.02em;margin:0}
+code{font:500 .92em ui-monospace,Menlo,monospace;background:rgba(255,255,255,.07);padding:2px 6px;border-radius:6px}
+pre{margin:16px 0;padding:16px 18px;border-radius:14px;background:rgba(0,0,0,.4);border:1px solid var(--line);overflow:auto;font:13.5px/1.6 ui-monospace,Menlo,monospace;color:#e8e2f3}
+pre code{background:none;padding:0;font-size:inherit}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:15px}
+th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-weight:600;color:var(--dim);font-size:13px;letter-spacing:.06em;text-transform:uppercase}
+td:first-child{white-space:nowrap;color:var(--txt);font-weight:500}
+.tblwrap{overflow-x:auto}
+
+/* header (same as the front page) */
+.nav{position:sticky;top:0;z-index:30;background:rgba(8,6,14,.92);border-bottom:1px solid var(--line)}
+.nav .wrap{display:flex;align-items:center;gap:18px;height:66px;width:min(1240px,calc(100% - 40px));margin:0 auto}
+.brand{display:flex;align-items:center;gap:11px;text-decoration:none;font:800 21px/1 var(--display);color:var(--txt)}
+.brand img{width:34px;height:34px;filter:drop-shadow(0 4px 12px rgba(255,111,174,.45))}
+.brand .jp{font:500 12px var(--body);color:var(--faint);letter-spacing:.2em}
+.brand .doc{font:500 13px var(--body);color:var(--dim);margin-left:10px;padding-left:12px;border-left:1px solid var(--line)}
+.nav nav{margin-left:auto;display:flex;align-items:center;gap:4px}
+.nav nav a{color:var(--dim);text-decoration:none;font-weight:500;font-size:14.5px;padding:9px 12px;border-radius:10px;transition:.18s}
+.nav nav a:hover{color:var(--txt);background:rgba(255,255,255,.06)}
+.nav .ib{display:inline-flex;width:36px;height:36px;align-items:center;justify-content:center;border-radius:10px;color:var(--dim)}
+.nav .ib svg{width:17px;height:17px;fill:currentColor}
+.btn{display:inline-flex;align-items:center;gap:9px;padding:9px 16px;border-radius:11px;border:1px solid var(--line);font:600 14px/1 var(--body);text-decoration:none;color:var(--txt);background:rgba(255,255,255,.05);transition:.2s}
+.btn.green{background:linear-gradient(135deg,var(--green),#57c9d5);color:#04231a;border-color:transparent}
+.btn:hover{transform:translateY(-2px)}
+@media(max-width:760px){.nav nav a.t{display:none}.brand .doc{display:none}}
+
+/* layout: her gutter | the docs | the contents */
+.page{width:min(1240px,calc(100% - 40px));margin:0 auto;display:grid;grid-template-columns:minmax(0,1fr);gap:40px;padding:48px 0 120px}
+@media(min-width:1200px){.page{grid-template-columns:260px minmax(0,1fr) 220px}.page>main{grid-column:2}.page>aside{grid-column:3}}
+@media(max-width:1199px){.page{padding-bottom:var(--yui-band,320px)}}
+main{max-width:760px}
+aside{position:sticky;top:90px;align-self:start;font-size:13.5px;display:none}
+@media(min-width:1200px){aside{display:block}}
+aside .t{font:700 10.5px var(--body);letter-spacing:.22em;text-transform:uppercase;color:var(--faint);margin:0 0 10px}
+aside a{display:block;color:var(--dim);text-decoration:none;padding:5px 10px;border-left:2px solid var(--line);transition:.15s}
+aside a:hover{color:var(--txt)} aside a.on{color:var(--txt);border-color:var(--pink)}
+aside a.sub{padding-left:22px;font-size:12.5px}
+
+.eyebrow{font-size:11px;letter-spacing:.24em;text-transform:uppercase;color:var(--pink);font-weight:700}
+.hero h1{font-size:clamp(40px,6vw,64px);font-weight:800;line-height:1;margin:10px 0 14px;background:linear-gradient(180deg,#fff,var(--pink2) 60%,var(--violet2));-webkit-background-clip:text;background-clip:text;color:transparent}
+.hero p{font-size:18px;color:var(--dim);margin:0;max-width:640px}
+section.doc{padding:44px 0 8px;border-top:1px solid var(--line);margin-top:36px}
+section.doc:first-of-type{border-top:0;margin-top:0}
+section.doc h2{font-size:32px;font-weight:700;margin:0 0 14px}
+section.doc h3{font-size:20px;font-weight:600;margin:28px 0 8px}
+section.doc p{color:var(--dim);margin:0 0 14px}
+section.doc p b,section.doc li b{color:var(--txt);font-weight:600}
+section.doc em{color:var(--pink2);font-style:normal}
+section.doc ul,section.doc ol{color:var(--dim);padding-left:22px;margin:0 0 14px}
+section.doc li{margin:4px 0}
+.callout{display:flex;gap:14px;padding:16px 18px;border-radius:16px;background:rgba(255,255,255,.04);border:1px solid var(--line);margin:18px 0;color:var(--dim);font-size:15px}
+.callout.warn{background:rgba(242,199,63,.07);border-color:rgba(242,199,63,.25)}
+.callout.good{background:rgba(63,224,165,.07);border-color:rgba(63,224,165,.25)}
+.callout.pink{background:rgba(255,111,174,.07);border-color:rgba(255,111,174,.3)}
+.callout span:first-child{font-size:20px;line-height:1.3}
+.callout b{color:var(--txt)}
+.kv{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin:14px 0}
+@media(max-width:640px){.kv{grid-template-columns:1fr}}
+.kv div{padding:14px 16px;border-radius:14px;background:var(--card);border:1px solid var(--line);font-size:14.5px;color:var(--dim)}
+.kv b{display:block;color:var(--txt);font-weight:600;margin-bottom:3px}
+.board{display:inline-block;padding:14px 22px;border-radius:14px;background:linear-gradient(160deg,rgba(124,92,255,.25),rgba(255,111,174,.12));border:1px solid var(--line2);font:600 15px/1.5 ui-monospace,Menlo,monospace;color:var(--green);margin:8px 0 14px;box-shadow:0 12px 40px rgba(124,92,255,.2)}
+.board i{display:block;font-style:normal;color:var(--txt);font-size:13px;letter-spacing:.12em}
+.faq details{border:1px solid var(--line);border-radius:14px;background:var(--card);padding:0 18px;margin:8px 0}
+.faq summary{cursor:pointer;padding:14px 0;font-weight:600;color:var(--txt);list-style:none}
+.faq summary::before{content:"▸ ";color:var(--pink)} .faq details[open] summary::before{content:"▾ "}
+.faq details p{padding-bottom:14px;margin:0}
+footer{border-top:1px solid var(--line);color:var(--faint);font-size:14px;padding:30px 0 var(--foot-pad,60px)}
+footer .wrap{width:min(1240px,calc(100% - 40px));margin:0 auto;display:flex;flex-wrap:wrap;gap:12px 22px}
+footer a{color:var(--dim);text-decoration:none} footer .sp{flex:1}
+
+#yui-load{position:fixed;left:24px;bottom:24px;z-index:46;display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:14px;background:rgba(13,11,18,.92);border:1px solid var(--line2);font-size:13px;color:var(--dim);transition:opacity .4s}
+#yui-load .bar{width:120px;height:4px;border-radius:2px;background:rgba(255,255,255,.08);overflow:hidden}
+#yui-load .bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--pink),var(--violet))}
+html.yui-ready #yui-load{opacity:0;pointer-events:none}
+#yui-dock{position:fixed;right:18px;bottom:18px;z-index:46;display:flex;gap:6px;padding:6px;border-radius:16px;background:rgba(13,11,18,.92);border:1px solid var(--line2)}
+#yui-dock button{width:42px;height:42px;border-radius:12px;border:0;background:transparent;font-size:18px;cursor:pointer;color:var(--txt)}
+#yui-dock button:hover{background:rgba(255,255,255,.08)}
+#yui-stage{opacity:0;transition:opacity .6s ease}
+html.yui-ready #yui-stage{opacity:1}
+</style>
+<link rel="stylesheet" href="pet.css">
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="index.html"><img src="assets/icon.png" alt="">YUI<span class="jp">ユイ</span><span class="doc">Docs</span></a>
+    <nav>
+      <a class="t" href="index.html">Home</a>
+      <a class="t" href="index.html#try">Try her</a>
+      <a class="t" href="index.html#wallet">Your wallet</a>
+      <a class="ib" id="navGh" href="#" target="_blank" rel="noopener" title="GitHub"><svg viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg></a>
+      <a class="ib" id="navX" href="#" target="_blank" rel="noopener" title="X"><svg viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg></a>
+      <a class="btn green" id="navDl" href="#" data-yui-say="Take me home~!">Download</a>
+    </nav>
+  </div>
+</header>
+
+<div class="page">
+<main>
+  <div class="hero">
+    <span class="eyebrow">Documentation</span>
+    <h1>Everything about Yui</h1>
+    <p>What she is, how she sees your trades, what every part of her does, and how to run all of it yourself. She reads along in the margin — click the page and she comes over.</p>
+  </div>
+
+  <section class="doc" id="idea">
+    <h2>The idea</h2>
+    <p>Trading is lonely and the chart doesn't care. Yui does. She is a 3D anime girl who stands on your taskbar all day, watches the wallet you trade from, and <b>reacts to every fill the way a friend sitting next to you would</b>: cheering a green sell, wincing at a red one, holding up your live PnL so you don't have to tab out to see it, and getting visibly roughed up when the day goes badly.</p>
+    <p><b>唯 (Yui)</b> means <em>sole, only, unique</em> — and that is the whole design. She is not a service you log into with a million identical copies: she runs on your machine, watches the one address you give her, learns your name, keeps your day, and can be dressed into a version nobody else has. One trader, one companion.</p>
+    <p>She is not a widget with a number on it. She has a body with physics, a face, a mood, a voice, a memory of your day and a small opinion about your sell button. She is also <b>completely read-only</b>: she watches a public address, never connects to a wallet and never asks you to sign anything.</p>
+    <div class="kv">
+      <div><b>On the desktop</b>An Electron app. Transparent, always on top, click-through everywhere except her body. She stands on the taskbar of every window.</div>
+      <div><b>On this website</b>The same renderer, bundled unchanged, running in a tab. Same physics, same tour, same panel, same reactions.</div>
+      <div><b>In your browser</b>A Chrome extension — going up on the Chrome Web Store before launch — that stands her on Axiom, Photon and pump.fun itself, reacting on the page you trade from. One setup follows you to every site.</div>
+      <div><b>On your phone</b>The website runs the same renderer in a mobile browser — pick her up with a finger, dress her, point her at an address. A dedicated mobile build is on the roadmap.</div>
+      <div><b>The relay</b>A small server on the same box as a pump.fun firehose. It matches fills to your address and tells her. You can run it yourself.</div>
+    </div>
+  </section>
+
+  <section class="doc" id="her">
+    <h2>Meet Yui</h2>
+    <p>Before any trade happens she is already alive. She breathes, shifts her weight, blinks, follows your cursor with her eyes and head, stretches, hums, looks around and walks somewhere else when she gets bored. Leave her alone long enough and she sits down and hugs a little pump.fun pill plushie.</p>
+    <div class="tblwrap"><table>
+      <tr><th>You do</th><th>She does</th></tr>
+      <tr><td>hover over her</td><td>notices you and smiles</td></tr>
+      <tr><td>click her</td><td>waves and opens her settings panel — <b>Her</b>, <b>Look</b>, <b>Board</b>, <b>Wallet</b></td></tr>
+      <tr><td>double-click her</td><td>jumps</td></tr>
+      <tr><td>tap her head</td><td>a poke on the nose: a scrunch and a small jerk back</td></tr>
+      <tr><td>drag her</td><td>hangs from wherever you grabbed her and swings like a pendulum, legs kicking, hair and skirt flying. Grab a foot and she dangles upside-down</td></tr>
+      <tr><td>let go / throw her</td><td>flies with your cursor's velocity, flails, rights herself in the air, lands with a squash, bounces off the screen edges</td></tr>
+      <tr><td>throw her very hard</td><td>gets dizzy for a few seconds</td></tr>
+      <tr><td>ignore her</td><td>wanders, stretches, sits, and eventually dozes off — a trade wakes her</td></tr>
+      <tr><td>press Escape</td><td>puts away whatever she has open</td></tr>
+    </table></div>
+    <div class="callout pink"><span>🖱️</span><div><b>On this website she also answers the page.</b> Click the empty page and she comes over. Double-click and she jumps. Buttons and cards have lines.</div></div>
+  </section>
+
+  <section class="doc" id="reactions">
+    <h2>Trade reactions</h2>
+    <p>Once she is watching an address, every buy and sell it makes reaches her within about a second — on the pump.fun bonding curve, on PumpSwap, Raydium, LaunchLab, Meteora; every venue the firehose carries.</p>
+    <div class="tblwrap"><table>
+      <tr><th>Event</th><th>She does</th></tr>
+      <tr><td>buy</td><td>perks up — <i>"Ooh, $SYM! 0.5 SOL in. Good luck~"</i> — and pulls out a board for the new bag</td></tr>
+      <tr><td>sell at a profit</td><td>arms up, a hop, the happy sound, a golden glow — <i>"+0.61 SOL on $PEPE~"</i></td></tr>
+      <tr><td>big win (&gt; 1 SOL or &gt; +100%)</td><td>the big-win sound, confetti, and whatever the last rug did to her heals faster</td></tr>
+      <tr><td>sell at a loss</td><td>leans in, hands together, a soft sound — <i>"It's okay… only −0.24 SOL. Next one."</i> — and a mark appears</td></tr>
+      <tr><td>big loss / rug</td><td>the wince, the sad sound, and worse marks: a cut brow, a black eye, a split lip, scrapes</td></tr>
+      <tr><td>flat sell</td><td><i>"Clean exit~"</i></td></tr>
+    </table></div>
+    <h3>Glow and wounds</h3>
+    <p>Every win makes her <b>glow</b>: a golden rim and halo, sparkles drifting up, fading over about fifteen seconds. Every loss leaves a <b>mark</b>, painted straight into her skin textures: pale skin, a bruised cheek, a band-aid, a nosebleed; big or repeated losses add a cut brow, a black eye, a split lip and scrapes on her arm and knee. They stack as the day gets worse. She heals over a couple of minutes on her own, and a profit patches her up faster.</p>
+    <h3>How PnL is counted</h3>
+    <p><b>Realised</b> profit and loss is measured against the <b>average cost</b> of what you sold, so partial exits are handled correctly. Your cost basis is seeded from your trade history the moment she connects; a fill that lands while that history is still loading is matched against it by transaction signature so it is never counted twice.</p>
+    <p><b>Unrealised</b> value comes from the token's own <b>market cap</b>, never from the raw quote amount of a trade. A pump.fun token is not always paired against SOL — stock-paired launches quote in the tokenised stock — so <code>quoteAmount / tokenAmount</code> is not a comparable price. Market cap is always in the token's own quote asset, so <code>cur_mc / entry_mc</code> is right whatever the pair, and multiplying that ratio by what you actually spent gives an honest number in the currency you spent it in.</p>
+  </section>
+
+  <section class="doc" id="board">
+    <h2>The PnL board</h2>
+    <p>She keeps a stack of little boards behind her back. Open a position and she reaches back, pulls one out and holds it up:</p>
+    <div class="board"><i>$PEPE</i>+0.500 SOL<br>+50.0%</div>
+    <p>Green in profit, red at a loss, and <b>marked to market live</b>: the relay forwards a throttled price tick whenever <em>anyone</em> trades a mint you hold, so the number moves with the chart, not just with your own fills. Buying a different token makes her stash that board and pull out a new one; when more than one position is open the board says how many. Close everything and she swaps to a <b>SESSION</b> board with your realised total.</p>
+    <ul>
+      <li><b>Ten styles</b> — Aurora glass (the default), neon, chalkboard, whiteboard, terminal and more — in the <b>Board</b> tab, with size and one- or two-handed hold.</li>
+      <li>She puts it away while she is being dragged, thrown or dizzy, and picks whichever hand has room so it never runs off the screen edge.</li>
+      <li>Only positions <b>opened while she is watching</b> raise a board. Bags you already held stay in her pocket, tracked for PnL but not waved at you the moment she starts.</li>
+      <li>The board's close badge is the only part of it that catches the mouse — clicks anywhere else on it still reach your chart.</li>
+      <li><b>Test position</b> in the Board tab gives her a pretend bag whose market cap wanders, so you can frame her on stream without a real trade.</li>
+    </ul>
+  </section>
+
+  <section class="doc" id="companion">
+    <h2>The companion</h2>
+    <p>The part that makes her more than a reaction machine.</p>
+    <div class="kv">
+      <div><b>She knows your name</b>The first thing she asks. She uses it in her lines, her greeting and her tour.</div>
+      <div><b>A greeting each day</b>The first time you see her on a new day she says hello and, if yesterday was a day, tells you how it went.</div>
+      <div><b>Streaks and milestones</b>Trades today, wins in a row, your best day, your hundredth trade — she keeps a scorecard and celebrates the ones worth celebrating with confetti.</div>
+      <div><b>The sell nudge</b>A position up past a threshold (default +50%, held at least 30 s) earns a gentle "…you could take some", once. Both numbers are yours to set.</div>
+      <div><b>The "are you sure?" look</b>Turned on, she reacts to a buy with a raised eyebrow first. It's a look, not a lock — she never blocks anything.</div>
+      <div><b>Open a coin with…</b>Her board's badge opens the token on Axiom, Photon or pump.fun, your choice.</div>
+      <div><b>Quiet mode</b>Do-not-disturb for an hour, a day, or until you say — or switch off just speech, reactions, the board or sounds. She keeps score silently.</div>
+      <div><b>Replay the tour · Reset</b>The Her tab replays her introduction, or resets everything to how she came.</div>
+    </div>
+  </section>
+
+  <section class="doc" id="look">
+    <h2>Her look</h2>
+    <p>The <b>Look</b> tab covers her figure — bust, bounce, cleavage, hips, waist, thighs, head — her outfit colour scheme (including fully custom colours), top style (full, sleeveless, crop, bikini), bottom (skirt or bikini), skirt length, a ribbon, and hair and eye colour. Everything applies live and is remembered.</p>
+    <p>It works by <b>recolouring and cutting the model's own textures</b>, so any VRM with VRoid-style material names takes every option. The bounce slider softens her chest springs and then scales the swing the solver produced — at 100% the jiggle carries on about a second after a landing — and stops short of the point where the mesh would push through her top.</p>
+    <h3>Bring your own VRM</h3>
+    <p><b>Load VRM</b> in the Her tab takes any VRM 0.x or 1.0 avatar — VRoid Studio exports, VRoid Hub downloads, Booth models. On this website the file never leaves your machine; it is read straight into the renderer. The bundled model is Sendagaya Shino (CC0).</p>
+    <h3>Size</h3>
+    <p>Tiny to Huge in the Her tab. She ships Huge (640 px). On this page she is that size unless the window can't hold it, and stays whatever you pick.</p>
+  </section>
+
+  <section class="doc" id="voice">
+    <h2>Sounds and voice</h2>
+    <p>Forty-seven real anime-girl clips, one for each thing that happens to her — a buy, a profit, the big win, a loss, being grabbed, thrown, landing, dizzy, a poke, a stretch, a hello. The <b>Her</b> tab has a mute switch, volume and pitch, and each event's clip can be changed. Her speech bubble carries the words; the clip carries the feeling.</p>
+    <div class="callout"><span>🔈</span><div>Browsers block sound until you click something. On this website she is <b>not</b> muted by default — the first thing you click on her wakes her voice.</div></div>
+  </section>
+
+  <section class="doc" id="wallet">
+    <h2>Wallet and privacy</h2>
+    <p>She needs one thing: the <b>public address you buy from</b>. Paste it into the Wallet tab (or the box on the front page), press Connect, and she says Live. Comma-separate several — Axiom and Photon make their own wallets, so add the one you actually trade from.</p>
+    <div class="callout good"><span>🔒</span><div><b>No wallet connection. No keys. No signup.</b> She never asks you to connect, sign or approve anything. She reads a public address and cannot move funds. Nothing you type reaches anyone but the relay that matches trades to it.</div></div>
+    <h3>Where things are kept</h3>
+    <ul>
+      <li><b>Desktop:</b> <code>settings.json</code> under your own user profile (<code>%APPDATA%/desktop-pet</code> on Windows). Not part of the app folder, never packaged.</li>
+      <li><b>Website:</b> your browser's <code>localStorage</code> for this site — your name, look, size, wallet, sound choices. Every visitor has their own; nothing is shared.</li>
+      <li><b>The relay</b> keeps a running cost basis per connected wallet in memory while you are connected, and nothing after.</li>
+    </ul>
+    <h3>What she can and cannot see</h3>
+    <p>Everything the firehose carries: pump.fun curves, PumpSwap, Raydium, LaunchLab, Meteora, every quote token. The Wallet tab shows how many trades have actually arrived, so "connected but silent" is visible rather than something you have to guess at. If you trade from a different wallet than the one you pasted, she will be quiet — add that one too.</p>
+  </section>
+
+  <section class="doc" id="relay">
+    <h2>The relay</h2>
+    <p><code>server/pet-relay.js</code> runs on a box that has a pump.fun firehose. It reads raw events, keeps a running cost basis per wallet and mint (seeded from a trade-history database when you connect), and pushes small JSON events to every connected Yui:</p>
+    <pre><code>client -&gt; ws://HOST:9998/?wallets=addr1,addr2
+server -&gt; {type:'hello',  wallets, positions:[…], firehose, solUsd}
+          {type:'price',  mint, price, mcUsd, …}          // a throttled tick for what you hold
+          {type:'trade',  side, wallet, mint, symbol, venue, amount, tokens,
+                          pnl, pnlPct, cost, remainingTokens, sig, …}
+          {type:'status', firehose, solUsd}</code></pre>
+    <p>Curves are quoted in whatever the launcher chose (SOL, USDC, a tokenised stock, PUMP…), so amounts and market caps are converted to <b>SOL-equivalent</b> for one comparable cost basis, with the raw quote travelling alongside so she can still speak dollars for a dollar-quoted coin. Matching is O(1) in the number of connected users.</p>
+    <h3>Public mode</h3>
+    <p>She ships pointed at a public relay, so the only thing to fill in is an address. A token inside a public download is not a secret, so the relay runs on <b>caps</b> instead:</p>
+    <div class="tblwrap"><table>
+      <tr><th>Cap</th><th>Default</th><th></th></tr>
+      <tr><td>PET_MAX_SESSIONS</td><td>2000</td><td>total sockets before new ones are refused</td></tr>
+      <tr><td>PET_MAX_PER_IP</td><td>4</td><td>connections from one address</td></tr>
+      <tr><td>PET_MAX_WALLETS</td><td>3</td><td>wallets one anonymous session may watch (extras are trimmed, not refused)</td></tr>
+      <tr><td>PET_MAX_WALLETS_AUTHED</td><td>40</td><td>the same, for a session presenting the token</td></tr>
+      <tr><td>PET_SEED_CONCURRENCY</td><td>4</td><td>history queries in flight; the rest queue</td></tr>
+    </table></div>
+    <h3 id="own-relay">Run your own</h3>
+    <p>The server is in the repository and in the download. Point it at your own feed and set a token, and she is entirely yours:</p>
+    <pre><code>cd server &amp;&amp; npm install
+# server/.env
+FIREHOSE_URL=ws://127.0.0.1:9999      # your pump.fun firehose (raw PumpApi events)
+PET_RELAY_PORT=9998
+PET_RELAY_TOKEN=change-me             # or PET_RELAY_PUBLIC=1 for caps instead of a token
+HARVESTER_DIR=/path/to/pump-harvester # where the trades database credentials live
+
+pm2 start pet-relay.js --name pet-relay &amp;&amp; pm2 save
+node test-relay.js                    # 18 checks against a fake firehose, no database needed</code></pre>
+    <p>Then in her Wallet tab, open <b>Use my own relay</b> and paste the address and token. On your own machine a <code>relay.local.json</code> next to <code>main.js</code> prefills them; it is git-ignored and never packaged.</p>
+    <div class="callout warn"><span>🌐</span><div><b>An https page can only open <code>wss://</code>.</b> The public relay is plain <code>ws://</code> on 9998 for the desktop build; the website reaches it through a TLS-terminating proxy on <code>relay.tradingcompanion.fun</code>. If you host your own for a website, put the same in front of it.</div></div>
+  </section>
+
+  <section class="doc" id="first-run">
+    <h2>The first-run tour</h2>
+    <p>The first time she runs — on the desktop or on the front page — she introduces herself and walks you through everything she does, each step completing only when you actually do it:</p>
+    <ol>
+      <li><b>Welcome</b> — she asks your name.</li>
+      <li><b>Click me once</b> — opens her panel.</li>
+      <li><b>Pick me up</b> — grab, drag, let go.</li>
+      <li><b>Dress me up</b> — the Look tab, at your own pace.</li>
+      <li><b>Connect your wallet</b> — paste an address; Live moves her on. Or Later.</li>
+      <li><b>Make a small test buy</b> — only if a wallet is connected; skippable.</li>
+      <li><b>What I do</b> — pretend Profit, Loss and Buy buttons, so you've seen every face before a real one.</li>
+    </ol>
+    <p>The <b>Her</b> tab replays it, and the ❔ in the dock on this site does too.</p>
+  </section>
+
+  <section class="doc" id="versions">
+    <h2>Desktop, website, extension</h2>
+    <div class="tblwrap"><table>
+      <tr><th></th><th>Desktop</th><th>Website</th><th>Extension</th></tr>
+      <tr><td>Where she stands</td><td>your taskbar, over every window</td><td>the bottom of the page</td><td>the trading site's page</td></tr>
+      <tr><td>Click-through</td><td>everywhere except her body</td><td>the page behind her stays usable</td><td>the site keeps every event that isn't on her</td></tr>
+      <tr><td>Settings</td><td>settings.json</td><td>localStorage, per browser</td><td>chrome.storage, follows you to every site</td></tr>
+      <tr><td>Relay</td><td>ws://</td><td>wss:// via the proxy</td><td>one shared socket per relay, from the worker</td></tr>
+      <tr><td>Sound</td><td>always</td><td>after your first click</td><td>after your first click</td></tr>
+      <tr><td>Multi-monitor</td><td>pick a screen</td><td>—</td><td>—</td></tr>
+      <tr><td>Phone</td><td>—</td><td>yes — drag her with a finger; the chart lesson is desktop-only</td><td>—</td></tr>
+    </table></div>
+  </section>
+
+  <section class="doc" id="faq">
+    <h2>FAQ</h2>
+    <div class="faq">
+      <details><summary>Windows says "Windows protected your PC".</summary><p>The build isn't code-signed (that costs money and a company). Click <b>More info → Run anyway</b>. The source is public if you'd rather build her yourself.</p></details>
+      <details><summary>Does she need my keys or a wallet connection?</summary><p>No. Never. She watches a public address. There is nothing to connect, sign or approve, and nothing she could do with your funds.</p></details>
+      <details><summary>She's connected but silent.</summary><p>Check the Wallet tab: it shows how many trades have arrived. Most often the trade came from a different wallet — Axiom and Photon create their own. Add that address too.</p></details>
+      <details><summary>Can I use my own character?</summary><p>Yes — any VRM avatar. Her Look tab works on any VRoid-style model; the physics and reactions work on all of them.</p></details>
+      <details><summary>Is it free?</summary><p>Yes. MIT licence, no accounts, no subscriptions. Creator fees from $YUI fund the work.</p></details>
+      <details><summary>macOS? Linux?</summary><p>The app is Electron, so both are possible; the builds are on the roadmap. The website works everywhere today.</p></details>
+      <details><summary>Where do I report a bug or ask for a feature?</summary><p>GitHub issues, or X. Both are linked at the top of the page.</p></details>
+    </div>
+  </section>
+</main>
+
+<aside>
+  <p class="t">Contents</p>
+  <a href="#idea">The idea</a>
+  <a href="#her">Meet Yui</a>
+  <a href="#reactions">Trade reactions</a>
+  <a href="#board">The PnL board</a>
+  <a href="#companion">The companion</a>
+  <a href="#look">Her look</a>
+  <a href="#voice">Sounds and voice</a>
+  <a href="#wallet">Wallet and privacy</a>
+  <a href="#relay">The relay</a>
+  <a class="sub" href="#own-relay">Run your own</a>
+  <a href="#first-run">The first-run tour</a>
+  <a href="#versions">Desktop · web · extension</a>
+  <a href="#faq">FAQ</a>
+</aside>
+</div>
+
+<footer>
+  <div class="wrap">
+    <span>YUI · tradingcompanion.fun</span>
+    <span class="sp"></span>
+    <a href="index.html">Home</a>
+    <a id="ftX" href="#" target="_blank" rel="noopener">X</a>
+    <a id="ftGh" href="#" target="_blank" rel="noopener">GitHub</a>
+    <a id="ftDl" href="#">Download</a>
+  </div>
+</footer>
+
+<div id="loading" hidden></div>
+<div id="bubble"></div>
+<div id="tour" hidden></div>
+<div id="ring" hidden></div>
+<div id="panel" hidden></div>
+<div id="yui-load"><span id="loadTxt">waking her up</span><span class="bar"><i id="loadBar"></i></span></div>
+<div id="yui-dock">
+  <button id="dockSound" title="Sound on / off">🔊</button>
+  <button id="dockWave" title="Say hi">👋</button>
+  <button id="dockDress" title="Dress her">🎀</button>
+  <button id="dockTour" title="Show me how she works">❔</button>
+</div>
+
+<script src="yui-defaults.js"></script>
+<script src="yui-sounds.js"></script>
+<script src="yui-boot.js"></script>
+<script src="yui-web.js"></script>
+<script src="yui-page.js"></script>
+<script>
+(function(){
+  var C = window.YUI_CONFIG, $ = function (id) { return document.getElementById(id); };
+  ['navGh','ftGh'].forEach(function(id){ $(id).href = C.github; });
+  ['navX','ftX'].forEach(function(id){ $(id).href = C.x; });
+  ['navDl','ftDl'].forEach(function(id){ $(id).href = 'index.html#get'; });
+  var bar = $('loadBar');
+  YuiWeb.start({ model: 'assets/yui.vrm', sounds: window.YUI_SOUNDS, onProgress: function(p){ bar.style.width = Math.round(p * 100) + '%'; } })
+    .catch(function(e){ $('loadTxt').textContent = "she couldn't load — try a refresh"; console.error('[yui]', e); });
+  var snd = $('dockSound');
+  function paintSound(){ snd.textContent = YuiWeb.settings.muted ? '🔇' : '🔊'; }
+  snd.addEventListener('click', function(){ YuiWeb.setMuted(!YuiWeb.settings.muted); paintSound(); }); paintSound();
+  $('dockWave').addEventListener('click', function(){ YuiWeb.command('wave'); YuiWeb.say('Hi~!', 2); });
+  $('dockDress').addEventListener('click', function(){ YuiWeb.openPanel('look'); });
+  $('dockTour').addEventListener('click', function(){ if (!YuiWeb.tourRunning()) YuiWeb.tour(); });
+  // the contents column follows the reader
+  var links = Array.prototype.slice.call(document.querySelectorAll('aside a'));
+  function mark(){
+    var y = window.scrollY + 120, on = null;
+    links.forEach(function(a){ var s = document.querySelector(a.getAttribute('href')); if (s && s.offsetTop <= y) on = a; });
+    links.forEach(function(a){ a.classList.toggle('on', a === on); });
+  }
+  window.addEventListener('scroll', mark, { passive: true }); mark();
+  function band(){
+    var h = YuiWeb.settings.userSized ? YuiWeb.settings.sizePx : YuiWeb.sizeForViewport();
+    document.documentElement.style.setProperty('--yui-band', Math.round(h + 40) + 'px');
+    document.documentElement.style.setProperty('--foot-pad', (window.innerWidth >= 1200 ? 60 : Math.round(h + 60)) + 'px');
+  }
+  band(); window.addEventListener('resize', band);
+})();
+</script>
+</body>
+</html>

@@ -3,6 +3,9 @@ dist/
 release/
 *.png
 !icon.png
+!extension/icons/*.png
+# her logo masters (scripts/make-icons.py cuts every icon from these)
+!branding/*.png
 # your own relay address and token: never committed, never packaged
 relay.local.json
 # runtime leftovers
@@ -13,8 +16,16 @@ settings.json
 web/yui-web.js
 web/pet.css
 web/yui-sounds.js
+web/yui-defaults.js
+web/favicon.ico
+web/fonts/
+# the paper-trading page, copied from the paper-axiom checkout by build-web.js
+web/trade/token.html
+web/trade/static/
 web/assets/
 web/downloads/
+# generated extension build (rebuild with `npm run build:ext`)
+extension/dist/
 
 # streamer-only voice tool: your ElevenLabs key and its audio cache. Never committed, never packaged.
 .elevenlabs.key
@@ -27,3 +38,8 @@ server/.env.*
 server/.token
 server/*.bak*
 relay-token.txt
+
+# local backups, the clip pack (licensed, lives outside the repo) and the voice-pack generation cache
+backups/
+/clips
+tools/voice-pack/cache/

@@ -34,9 +34,93 @@ in `scripts/package-allow.txt`; anything not listed there stops the build.
 
 ## The website
 
-`web/` is the landing page for trenchwaifu.fun, and the Yui standing on it is **the same
-renderer as the desktop app** — same walk cycle, same drag and throw physics, same spring bones.
-There is no second implementation to keep in step.
+`web/` holds three pages. `app.html` is **the app in a tab**: no page around her, the app's own
+defaults, the first-run tour, the greeting, streaks, the sell nudge — everything the desktop build
+does that a browser can do. `index.html` is the landing page — hero, what she does, live demo
+chips, how it works, the wallet box, the download, the open-source block, the roadmap — and
+`docs.html` is the long-form documentation with a contents column. On all of them the Yui you
+see is **the same renderer as the desktop app** — same walk cycle, same drag and throw physics,
+same spring bones. There is no second implementation to keep in step.
+
+**The starter.** The front page opens on the terminal, not the hero: `web/yui-starter.js` puts
+Paperxiom's page in front of everything, replaying a real launch (`web/trade/tapes/<mint>.json`,
+exported from the harvester's Postgres by `scripts/tape-from-db.js <mint> --freeze "<utc time>"`)
+frozen a moment before it ran, with her beside it. One guided paper trade: the hint points at
+Buy (1 SOL, presets locked), she takes the position, playback runs to the tape's top and stops
+itself there (`stopAt`), the hint points at Sell, and her win reaction is the real one. Then the
+starter slides away and the first-visit hello runs underneath. Everyone gets the starter; a
+returning visitor gets a Skip at the top right. The terminal's replay transport is hidden unless
+the page is opened with `?rmt=1`.
+
+**The paper terminal.** `web/trade/` is the lesson's chart — Paperxiom's token page — Axiom's captured chrome, a
+lightweight-charts pane with trade bubbles, paper orders on the real pump.fun bonding curve —
+copied whole from the paper-axiom checkout by `build-web.js` (`PAPERXIOM_DIR`, default
+`../../EVERYTHING/paper-axiom`; the copy is git-ignored) and shown by the starter's overlay. It replays a real
+launch from a tape (see **The starter**), renamed `$TEST` for the lesson. `web/trade/pa-yui.js` is the bridge: it wraps the page's `API.buy`/`API.sell` and posts
+each fill to the parent shaped exactly like the relay's `trade` message (SOL amounts, the market
+cap it printed at, realised PnL on a sell against the cost of what was sold), and posts the
+chart's last bar as a `price` tick while it moves; `yui-page.js` hands both to `__petRelayMsg`,
+the handler real trades go into. The messages carry `paper: 1`, which is what lets her keep the
+board up without a relay connection.
+
+`web/yui-page.js` makes the pages hers. **A first visit is gated**: the page sits behind glass
+(`#yui-intro`, above the header and below her) while she walks over from further in, waves,
+says hello and asks your name — the beginning of the app's own tour. Giving a name frees the
+page; the rest of the tour carries on and every later step can be skipped. The gate is
+remembered per browser (`yui.web.intro.v1`); a visit that leaves before the name meets her
+again. After that, buttons and cards carry `data-yui-say` / `data-yui-mood` (a wave, a wince, a
+hop) and `data-yui-hover`; a click on the bare page walks her over; two quick clicks make her
+jump; the wallet going live gets confetti; coming back to the tab gets a wave. Everything is a
+nudge to states she already has, through three renderer hooks (`__petWalkTo`, `__petJump`,
+`__petPoke`) — nothing is animated by hand, and none of it runs while her tour or panel is up.
+Where she was left is remembered per page.
+
+Her defaults on the web are not written twice either: `scripts/build-web.js` reads
+`defaultSettings()` out of `main.js` and generates `web/yui-defaults.js`, so a change to how she
+ships in the zip is a change to how she loads in a tab. `yui-boot.js` applies the few overrides a
+browser needs on top (relay URL follows the page, no display picker, size capped to the window)
+with the reason next to each. A page may adjust a default through `YUI_CONFIG.defaults` — the
+landing page turns the app's tour off because it has its own — and size her through
+`YUI_CONFIG.size(w, h)`.
+
+Every visitor has their own Yui: settings live in that browser's `localStorage`, and each socket
+to the relay carries its own wallets. Nothing is shared between visitors.
+
+**Performance in a tab.** The renderer picks a lighter profile when `window.pet.web` is set
+(the bridge sets it): no supersampling (the display's own pixel density, capped at 2×), 60 fps
+active / 30 calm instead of 144 / 60, effects canvas at ≤ 1.5×. The pages avoid anything the
+compositor would redo on every frame she moves — no `backdrop-filter` (the header, the dock and
+the first-visit glass are plain translucent), no rotating gradients — and the marquee is a
+composited transform. Her body ships without the VRM's 2.5 MB preview thumbnail and with a
+pre-gzipped twin the server hands out as `Content-Encoding: gzip` (14.4 → 8.7 MB on the wire;
+`X-Uncompressed-Size` keeps the progress bar honest). The first visit shows her download
+progress on the glass rather than a dark page.
+
+Both pages are served from the relay box by `scripts/serve-web.js`, and `npm run build:web`
+there is the deploy — a refresh picks it up:
+
+- pm2 `yui-web` — `PORT=8820 INDEX=app.html`, reachable directly at http://192.248.179.126:8820/.
+  The relay is on the same host, so she connects over plain `ws://` with nothing to configure.
+- pm2 `tradingcompanion-web` — `PORT=8821 INDEX=index.html`, previewable at http://192.248.179.126:8821/ and behind Caddy as
+  **tradingcompanion.fun** / www. Caddy also terminates TLS for `relay.tradingcompanion.fun` and hands the
+  socket to the relay on 9998, which is why `index.html` pins `relay: 'wss://relay.tradingcompanion.fun'`.
+  DNS lives at Namecheap; the site is live as soon as the three A records point at this box.
+
+```bash
+npm run test:web       # headless: load app.html in Electron's Chromium, drive the same hooks as npm test
+npm run test:web:tour  # the first-run tour end to end with real (trusted) mouse and keyboard input
+npm run test:web:page  # the landing page as an experience: scroll-walking, page clicks, the docs page
+YUI_TEST_WALLET=<address> npm run test:web:tour   # …including the wallet step against the live relay
+```
+
+`test:web:tour` exists because the hooks dispatch on the window and never touch DOM hit-testing:
+"can a person click this button" is a different question from "does the physics work", and the
+first web build shipped with the tour card stacked *under* her canvas — every hook-driven check
+passed while nobody could type their name. Three things in the browser build exist for the same
+reason and are worth knowing about: everything she shows stacks above her stage (tour > panel >
+bubble > canvas); a real press on the empty page is withheld from the renderer, as it is on the
+desktop where the window is click-through there (so a click beside her cannot close the panel a
+tour step just opened); and the grab cursor lives on her canvas alone.
 
 That works because `src/renderer.js` only ever talks to Electron through one object,
 `window.pet`. `web/yui-boot.js` supplies a browser-shaped version of that bridge:
@@ -61,11 +145,13 @@ address and token fold away behind a "use my own relay" disclosure.
 ### The tour
 
 A first-time visitor has no way of knowing a girl standing on a landing page can be picked up.
-So she waves, and `web/yui-guide.js` walks through four things — pick me up, click me, dress me,
-give me an address — each step completing only when the visitor actually does it. The signals are
-real: `setState` in the renderer reports every state change to `window.__petOnState`, because
-sampling on a timer misses a quick flick of the wrist. It is skippable, it remembers that it has
-been seen, and the **?** in her dock replays it.
+So she waves and runs **the app's own first-run tour** — the same seven steps, the same code —
+greeting them by asking their name, then click me, pick me up, dress me, connect a wallet, a test
+buy, and what she does. Only the words change: the browser bridge sets `home: 'page'`, so she says
+she lives at the bottom of the page rather than on the taskbar. She stands on the left
+(`YUI_CONFIG.spawn`) at the app's size so the hero keeps the middle; on a narrow window the hero
+and footer reserve her height instead. The **?** in her dock replays the tour, and the page's own
+"watch an address" box (`web/yui-wallet.js`) is bound to the same wallet setting as her panel.
 
 ### Her wallet, in the browser
 
@@ -75,7 +161,7 @@ same setting. The scheme follows the page: `ws://` from http, `wss://` from http
 
 **A page served over https can only open `wss://`.** The public relay is plain `ws://` today, so
 the wallet feed on the live site needs TLS in front of the relay (a reverse proxy terminating
-`wss://relay.trenchwaifu.fun` is enough; point `YUI_CONFIG.relay` at it). Until then it works
+`wss://relay.tradingcompanion.fun` is enough; point `YUI_CONFIG.relay` at it). Until then it works
 when the site is served over http — `npm run web` — and her panel says exactly why rather than
 showing "connection failed".
 
@@ -84,11 +170,41 @@ npm run build:web     # bundle the renderer, copy her model and voice, generate 
 npm run web           # the same, then serve web/ on http://localhost:4173
 ```
 
-Everything in `web/` except `index.html`, `yui-boot.js` and `yui-guide.js` is generated —
+Everything in `web/` except `index.html`, `docs.html`, `app.html`, `yui-boot.js`, `yui-page.js` and `yui-wallet.js` is generated —
 including `downloads/`, which picks up the zip from `npm run package`. Upload the folder as-is.
 The only thing to edit is the `YUI_CONFIG` block at the top of `index.html` (mint, download URL,
 socials, relay host); until the mint is filled in the page says the contract is not published yet
 rather than showing a placeholder that could be mistaken for a real address.
+
+## The Chrome extension
+
+`extension/` puts her on a trading terminal — Axiom, pump.fun, BullX, Photon, GMGN, Padre — as a
+browser extension. It is the **same renderer again**, in a third container after Electron and a
+plain tab: nothing in `src/renderer.js` or `web/yui-boot.js` was forked for it.
+
+```bash
+npm run build:ext            # extension/dist (load unpacked) + release/yui-extension-<version>.zip
+npm run test:ext             # headless: loads the unpacked extension into Chromium and drives her
+```
+
+What the container does, and why:
+
+| | |
+| --- | --- |
+| **a shadow root** | The site's stylesheet cannot restyle her panel (Tailwind resets every `button`), and hers cannot touch the site. The bundle is built with `document` pointed at a stand-in (`__YUI_DOC`) that answers `getElementById` and `body` from her shadow root, so the renderer never learned about it. |
+| **chrome.storage** | One setup — wallet, look, size — that follows the trader to every site and survives the site clearing its own storage. `yui-boot.js` takes a storage object from `YUI_CONFIG`. |
+| **the background worker** | Every terminal is https and an https page may only open `wss://`; the relay is `ws://`. Her socket is opened by the extension's service worker instead (`WebSocket` is pointed at `__YUI_WS`, a look-alike over a runtime port). One socket per relay URL is shared by every tab watching the same wallets, so a trader with six terminals open does not hit the relay's per-address cap; a tab joining late is handed the last `hello` so its positions are seeded too. The extension points at `wss://relay.tradingcompanion.fun` (Caddy terminates TLS on the relay box); until that name resolves the worker falls back to the plain address the app uses. |
+| **a frame cap** | `requestAnimationFrame` is pointed at `__YUI_RAF`, which can hold her to 30 fps (the popup's switch) and stops her frames entirely while she is switched off for a site. |
+| **the popup** | The wallet field, a per-site on/off switch, the frame cap, and what she is doing on the current tab. |
+
+The site list lives at the top of `scripts/build-extension.js` (`SITES`); adding a terminal is one
+line. Her right-click and double-click are only cancelled when they land on her, her panel or her
+tour card — the site keeps its own context menu beside her.
+
+Her logo lives in `branding/` — `yui-head.png` (backgroundless) is every icon, `yui-pfp.png` the
+social preview; `python3 scripts/make-icons.py` regenerates `icon.png`, `yui.ico` and
+`extension/icons/` from them. Before the store: add screenshots, a privacy policy URL, and check
+the model's licence allows redistribution.
 
 ## Connecting her to your trades
 
@@ -234,7 +350,7 @@ stays away until the content changes (a new token, or going flat). Only the × i
 the mouse — clicks anywhere else on the board pass straight through to the chart behind it.
 
 The market cap is shown **in dollars**, converted with the SOL price from the settings panel
-(default 101.95). A pair with no known dollar rate falls back to its own quote units.
+(default 113). A pair with no known dollar rate falls back to its own quote units.
 
 She can hold it **one-handed or in both hands**, set by **Hold**. Both hands is the default.
 

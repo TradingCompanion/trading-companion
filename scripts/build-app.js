@@ -96,7 +96,7 @@ function build() {
       execFileSync(rcedit, [path.join(stage, PRODUCT + '.exe'), '--set-icon', ico,
         '--set-version-string', 'ProductName', PRODUCT,
         '--set-version-string', 'FileDescription', pkg.description || PRODUCT,
-        '--set-version-string', 'CompanyName', 'trenchwaifu.fun',
+        '--set-version-string', 'CompanyName', 'tradingcompanion.fun',
         '--set-file-version', pkg.version, '--set-product-version', pkg.version], { stdio: 'pipe' });
       console.log('[build-app] exe icon and version strings set');
     } catch (e) {

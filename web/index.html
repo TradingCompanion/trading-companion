@@ -1,426 +1,559 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>YUI — trenchwaifu.fun</title>
-<meta name="description" content="Yui is an anime desktop companion who lives on your taskbar and reacts to your pump.fun trades. She glows when you win and gets bruised when you don't. Drag her around right here, point her at your wallet, then take her home. Free for Windows.">
-<meta property="og:title" content="YUI — the waifu who lives in your trenches">
-<meta property="og:description" content="She stands on your taskbar, holds up your live PnL, glows on profit and bleeds on loss. Pick her up right here and point her at your wallet.">
-<meta property="og:type" content="website">
+<title>Yui — the Trading Companion</title>
+<meta name="description" content="Yui is a 3D anime girl who lives on your taskbar, watches your wallet and reacts to every trade — glowing when you win, bruised when you don't. Free, open source, no keys, no signing.">
+<meta property="og:title" content="Yui — the Trading Companion">
+<meta property="og:description" content="She lives on your taskbar, watches your wallet and holds up your live PnL. Free, open source.">
+<meta property="og:image" content="https://tradingcompanion.fun/assets/yui-pfp.png">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://tradingcompanion.fun/assets/yui-pfp.png">
 <meta name="theme-color" content="#08060e">
-
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="pet.css">
-
+<link rel="icon" href="favicon.ico">
+<link rel="icon" type="image/png" sizes="256x256" href="assets/icon.png">
+<link rel="apple-touch-icon" href="assets/yui-pfp.png">
+<!-- Before anything paints: is this a first visit? Then the page opens behind the glass, with no
+     frame of the bare page first. yui-page.js does the rest once she is here. -->
+<script>
+// The chart lesson needs a wide screen (Axiom's own layout does), so a phone skips it and meets
+// her on the site with her tutorial instead. Decided before the first paint, like the glass.
+window.YUI_PHONE = window.innerWidth <= 900;
+if (!window.YUI_PHONE) document.documentElement.classList.add('yui-starter');
+document.documentElement.classList.add('yui-intro');   // every visit gets her intro
+</script>
 <!-- ============================================================================================
-     EDIT THIS BLOCK. Nothing else on the page needs touching.
-     Until `mint` is filled in, the page shows "contract not published yet" rather than a fake
-     address — deliberately, so a placeholder can never go live looking like the real thing.
+     tradingcompanion.fun — the landing page.
+
+     Yui on this page is the app: web/yui-web.js is src/renderer.js bundled unchanged, her
+     defaults are generated from main.js, her tour is the app's tour. yui-page.js makes the page
+     hers — on a first visit the page waits behind glass while she says hello and asks your name,
+     then she answers the things you click (data-yui-say / data-yui-mood) and comes over when you
+     tap the empty page.
+
+     Fill in YUI_CONFIG below. Until `mint` is set the page says the contract is not published
+     yet — deliberately, so a placeholder can never go live looking like the real thing.
      ============================================================================================ -->
 <script>
 window.YUI_CONFIG = {
   mint:        'REPLACE_WITH_YOUR_PUMP_FUN_MINT',
   pumpUrl:     '',                                  // blank -> built from the mint automatically
-  download:    'downloads/Yui-0.1.0-win-x64.zip',   // upload the zip here (or paste a full URL)
+  download:    'downloads/Yui-0.1.0-win-x64.zip',   // the release zip (or a full URL)
   downloadSize:'128 MB',
   version:     '0.1.0',
+  chrome:      '',                                  // the Chrome Web Store listing, once it is up
   x:           'https://x.com/trenchwaifu',
+  github:      'https://github.com/TradingCompanion/trading-companion',
   telegram:    '',                                  // blank hides the button
 
-  // Her trade feed. The scheme follows the page automatically: ws:// from http, wss:// from
-  // https. Until the relay has TLS in front of it, the wallet feed on this page works when the
-  // site is served over http (localhost) and the desktop build works everywhere.
-  relayHost:   'relay.trenchwaifu.fun',
+  // Her trade feed. On the real site (https) it has to be wss://: Caddy on the relay box
+  // terminates TLS for relay.tradingcompanion.fun and hands the socket to the relay on 9998. On the
+  // plain-http preview at the box's address, blank makes her follow the page's own host to the
+  // relay's port, the same way app.html does.
+  relayHost:   '',
   relayPort:   9998,
-  relay:       ''                                   // set to force one exact URL, e.g. wss://…
+  relay:       location.protocol === 'https:' ? 'wss://relay.tradingcompanion.fun' : '',
+
+  // She is the app's size here (640, "Huge", or what the window can hold) and lives on the left,
+  // so the page's text has the middle. On a first visit the page is greyed out while she walks
+  // over from further in (spawn), says hello and asks your name — the start of her tour, which is
+  // the app's own, word for word ("the bottom of the page" instead of "your taskbar"). The tour
+  // is not auto-started by the renderer here (the starter holds it) — it runs once the starter is
+  // over and she is back at her spot, until she has been through it; the ❔ replays it.
+  // The starter: the terminal first, replaying a real launch frozen just before it ran, one
+  // guided paper trade with her beside it, then the site. scripts/tape-from-db.js makes tapes.
+  starter: window.YUI_PHONE ? null : { tape: 'trade/tapes/25YZyQ4p8wRVkwPtyvQ4VWPNdHMStEXe5h84FVAAqaWR.json' },
+  intro: true,
+  introSpot: 0.16,
+  // On a first visit she stands at her spot and says hello the moment she is on screen — at her
+  // spot even for a browser that remembers her somewhere else (forceSpawn).
+  // The starter walks her to the button and back, so this page always opens with her at her spot,
+  // whatever a previous visit remembered.
+  spawn: 0.16,
+  forceSpawn: true
 };
 </script>
 
 <style>
-/* ============================== theme ============================== */
+/* ============================== theme (Aurora) ============================== */
+@font-face{font-family:"Rubik";src:url("fonts/Rubik.woff2") format("woff2");font-weight:300 900;font-display:swap}
+@font-face{font-family:"Outfit";src:url("fonts/Outfit.woff2") format("woff2");font-weight:100 900;font-display:swap}
 :root{
-  --ink:#08060e; --ink2:#0e0a17;
-  --card:rgba(255,255,255,.042); --card2:rgba(255,255,255,.065);
-  --line:rgba(255,255,255,.085); --line2:rgba(255,255,255,.16);
+  --ink:#08060e; --ink2:#0e0a17; --glass:rgba(13,11,18,.72);
+  --card:rgba(255,255,255,.042); --card2:rgba(255,255,255,.07);
+  --line:rgba(255,255,255,.085); --line2:rgba(255,255,255,.17);
   --txt:#f4eefb; --dim:#a99bc2; --faint:#786a91;
-  --pink:#f6a5c6; --violet:#a97bff; --green:#6ee7a8; --red:#ff8a9e; --gold:#f2c73f;
-  --display:'M PLUS Rounded 1c',system-ui,sans-serif;
-  --body:'Inter',system-ui,-apple-system,sans-serif;
-  --maxw:1080px;
-  --r:18px;
+  --pink:#ff6fae; --pink2:#f6a5c6; --violet:#7c5cff; --violet2:#a97bff; --teal:#34d5c9;
+  --green:#3fe0a5; --red:#ff5c8a; --gold:#f2c73f;
+  --display:"Outfit",system-ui,sans-serif;
+  --body:"Rubik","Segoe UI",system-ui,-apple-system,sans-serif;
+  --maxw:1120px; --r:20px;
 }
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 html{scroll-behavior:smooth}
 @media(prefers-reduced-motion:reduce){ html{scroll-behavior:auto} *{animation-duration:.01ms!important;transition-duration:.01ms!important} }
-body{
-  margin:0; background:var(--ink); color:var(--txt); font:16px/1.65 var(--body);
-  -webkit-font-smoothing:antialiased; overflow-x:hidden;
-}
-/* the glow behind everything */
-body::before{
-  content:""; position:fixed; inset:0; z-index:-2; pointer-events:none;
-  background:
-    radial-gradient(58vw 50vh at 16% 4%,  rgba(169,123,255,.24), transparent 62%),
-    radial-gradient(48vw 46vh at 86% 18%, rgba(246,165,198,.18), transparent 60%),
-    radial-gradient(76vw 42vh at 50% 106%,rgba(110,231,168,.10), transparent 64%);
-}
-/* faint grid, the "trench" floor */
-body::after{
-  content:""; position:fixed; inset:0; z-index:-1; pointer-events:none; opacity:.42;
-  background-image:linear-gradient(rgba(255,255,255,.032) 1px,transparent 1px),
-                   linear-gradient(90deg,rgba(255,255,255,.032) 1px,transparent 1px);
-  background-size:68px 68px;
-  mask-image:linear-gradient(180deg,transparent,#000 26%,#000 74%,transparent);
-}
+body{margin:0;background:var(--ink);color:var(--txt);font:16px/1.65 var(--body);-webkit-font-smoothing:antialiased;overflow-x:hidden}
+/* the aurora behind everything */
+body::before{content:"";position:fixed;inset:0;z-index:-2;pointer-events:none;background:
+  radial-gradient(60% 50% at 12% 0%,rgba(255,111,174,.20),transparent 60%),
+  radial-gradient(50% 45% at 88% 10%,rgba(124,92,255,.22),transparent 60%),
+  radial-gradient(40% 40% at 60% 100%,rgba(52,213,201,.12),transparent 60%),
+  var(--ink)}
+body::after{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.42;
+  background-image:linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px);
+  background-size:56px 56px;mask-image:radial-gradient(ellipse at 50% 30%,#000 30%,transparent 75%)}
 a{color:inherit}
-.wrap{max-width:var(--maxw); margin:0 auto; padding:0 24px}
-section{position:relative; z-index:2}
-.pad{padding:88px 0}
-@media(max-width:640px){ .pad{padding:62px 0} }
+.wrap{width:min(var(--maxw),calc(100% - 40px));margin:0 auto}
+section{position:relative;z-index:2}
+h1,h2,h3,h4{font-family:var(--display);letter-spacing:-.02em;margin:0}
+h2{font-size:clamp(30px,4.2vw,46px);font-weight:700;line-height:1.08}
+.eyebrow{font-size:11px;letter-spacing:.24em;text-transform:uppercase;color:var(--pink);font-weight:700}
+.sec-head{text-align:center;max-width:680px;margin:0 auto 40px}
+.sec-head p{color:var(--dim);font-size:17px;margin:14px 0 0}
+.pad{padding:96px 0}
+.grad{background:linear-gradient(90deg,var(--pink2),var(--violet2) 55%,var(--teal));-webkit-background-clip:text;background-clip:text;color:transparent}
 
-/* ============================== nav ============================== */
-.nav{
-  position:sticky; top:0; z-index:30; backdrop-filter:blur(16px) saturate(1.4);
-  background:linear-gradient(180deg,rgba(8,6,14,.9),rgba(8,6,14,.55));
-  border-bottom:1px solid var(--line);
+/* ============================== header ============================== */
+/* No backdrop-filter anywhere on this page: a blur that samples the layer beneath is re-run on
+   every frame she moves, over the whole bar, on whatever GPU the tab happens to get. */
+.nav{position:sticky;top:0;z-index:30;background:rgba(8,6,14,.92);border-bottom:1px solid var(--line)}
+.nav .wrap{display:flex;align-items:center;gap:18px;height:66px}
+.brand{display:flex;align-items:center;gap:11px;text-decoration:none;font:800 21px/1 var(--display);letter-spacing:.02em}
+.brand img{width:34px;height:34px;filter:drop-shadow(0 4px 12px rgba(255,111,174,.45));image-rendering:auto}
+.brand .jp{font:500 12px var(--body);color:var(--faint);letter-spacing:.2em;margin-left:2px}
+.nav nav{margin-left:auto;display:flex;align-items:center;gap:4px}
+.nav nav a{color:var(--dim);text-decoration:none;font-weight:500;font-size:14.5px;padding:9px 12px;border-radius:10px;position:relative;transition:.18s}
+.nav nav a:hover{color:var(--txt);background:rgba(255,255,255,.06)}
+.nav nav a.on{color:var(--txt)}
+.nav nav a.on::after{content:"";position:absolute;left:12px;right:12px;bottom:4px;height:2px;border-radius:2px;background:linear-gradient(90deg,var(--pink),var(--violet))}
+.nav .replay{color:var(--dim);background:transparent;border:1px solid var(--line);border-radius:10px;font:500 14.5px/1 var(--body);padding:9px 13px;cursor:pointer;transition:.18s}
+.nav .replay:hover{color:var(--txt);background:rgba(255,255,255,.06);border-color:var(--line2)}
+.nav .icons{display:flex;gap:4px;margin:0 6px 0 4px;padding-left:10px;border-left:1px solid var(--line)}
+.nav .ib{display:inline-flex;width:36px;height:36px;align-items:center;justify-content:center;border-radius:10px;color:var(--dim);border:1px solid transparent}
+.nav .ib:hover{color:var(--txt);background:rgba(255,255,255,.06);border-color:var(--line)}
+.nav .ib svg{width:17px;height:17px;fill:currentColor}
+.nav .btn{padding:9px 16px;font-size:14px;border-radius:11px}
+.burger{display:none;margin-left:auto;width:40px;height:40px;border-radius:10px;border:1px solid var(--line);background:transparent;color:var(--txt);cursor:pointer;font-size:18px}
+@media(max-width:900px){
+  .nav .replay{display:none}
+  .nav nav{position:fixed;top:66px;left:0;right:0;flex-direction:column;align-items:stretch;gap:2px;padding:12px 16px 16px;background:rgba(8,6,14,.96);border-bottom:1px solid var(--line);display:none}
+  .nav nav.open{display:flex}
+  .nav nav a{font-size:16px;padding:12px}
+  .nav .icons{margin:6px 0 0;padding:10px 0 0;border-left:0;border-top:1px solid var(--line)}
+  .burger{display:inline-flex;align-items:center;justify-content:center}
+  .nav .btn{margin-top:6px}
 }
-.nav .wrap{display:flex; align-items:center; gap:14px; height:64px}
-.brand{display:flex; align-items:center; gap:10px; font-family:var(--display); font-weight:800; font-size:19px; letter-spacing:.02em; text-decoration:none}
-.brand .orb{width:11px;height:11px;border-radius:50%;background:var(--pink);box-shadow:0 0 14px var(--pink)}
-.brand .jp{font-size:12px;color:var(--faint);font-weight:400;letter-spacing:.24em;margin-left:2px}
-.nav nav{margin-left:auto; display:flex; gap:4px; align-items:center}
-.nav nav a{
-  text-decoration:none; color:var(--dim); font-size:14px; font-weight:500;
-  padding:8px 13px; border-radius:10px; transition:.18s;
-}
-.nav nav a:hover{color:var(--txt); background:rgba(255,255,255,.06)}
-@media(max-width:820px){ .nav nav a.hide-sm{display:none} }
 
 /* ============================== buttons ============================== */
-.btn{
-  display:inline-flex; align-items:center; gap:9px; justify-content:center;
-  padding:14px 24px; border-radius:14px; border:1px solid var(--line);
-  font:600 15px/1 var(--body); text-decoration:none; color:var(--txt);
-  background:rgba(255,255,255,.05); cursor:pointer; transition:.2s; white-space:nowrap;
-}
-.btn:hover{transform:translateY(-2px); background:rgba(255,255,255,.09); border-color:var(--line2)}
-.btn.primary{
-  background:linear-gradient(135deg,var(--pink),var(--violet)); color:#1a0c18; border-color:transparent;
-  box-shadow:0 10px 34px rgba(246,165,198,.26);
-}
-.btn.primary:hover{box-shadow:0 16px 46px rgba(246,165,198,.4)}
-.btn.green{background:linear-gradient(135deg,var(--green),#57c9d5); color:#04231a; border-color:transparent; box-shadow:0 10px 34px rgba(110,231,168,.22)}
-.btn.green:hover{box-shadow:0 16px 46px rgba(110,231,168,.36)}
-.btn small{font-weight:500; opacity:.72}
+.btn{display:inline-flex;align-items:center;gap:9px;justify-content:center;padding:14px 24px;border-radius:14px;border:1px solid var(--line);
+  font:600 15px/1 var(--body);text-decoration:none;color:var(--txt);background:rgba(255,255,255,.05);cursor:pointer;transition:.2s;white-space:nowrap}
+.btn:hover{transform:translateY(-2px);background:rgba(255,255,255,.09);border-color:var(--line2)}
+.btn.primary{background:linear-gradient(135deg,var(--pink),var(--violet));color:#fff;border-color:transparent;box-shadow:0 10px 34px rgba(255,111,174,.28)}
+.btn.primary:hover{box-shadow:0 16px 46px rgba(255,111,174,.42)}
+.btn.green{background:linear-gradient(135deg,var(--green),#57c9d5);color:#04231a;border-color:transparent;box-shadow:0 10px 34px rgba(63,224,165,.22)}
+.btn.green:hover{box-shadow:0 16px 46px rgba(63,224,165,.36)}
+.btn.ghost{background:transparent}
+.btn.chrome,.btn.gh{background:rgba(255,255,255,.06);border-color:var(--line2)}
+.btn.gh svg{width:18px;height:18px;fill:currentColor}
+.btn.chrome svg{width:19px;height:19px}
+.btn small{font-weight:500;opacity:.72}
+.btn svg{width:16px;height:16px;fill:currentColor}
 
 /* ============================== hero ============================== */
-/* She is fixed to the bottom of the viewport and wanders across it, so the first screen keeps a
-   clear band for her. --yui-band is set from JS to her actual height. */
-.hero{
-  position:relative;
-  min-height:calc(100dvh - 64px); display:flex; flex-direction:column; justify-content:center;
-  padding:40px 0 var(--yui-band,340px); text-align:center;
+.hero{position:relative;min-height:calc(100dvh - 66px);display:flex;flex-direction:column;justify-content:center;padding:56px 0 var(--yui-band,340px)}
+.hero .wrap{display:grid;grid-template-columns:minmax(0,1fr);gap:0}
+.hero .copy{max-width:640px;margin:0 auto;text-align:center}
+@media(min-width:1200px){
+  /* she stands on the left at the app's size; the words take the room to her right */
+  .hero .wrap{grid-template-columns:minmax(300px,38%) minmax(0,1fr)}
+  .hero .copy{grid-column:2;text-align:left;margin:0;max-width:640px}
+  .hero .cta,.hero .ca{justify-content:flex-start}
+  .hero .facts{justify-content:flex-start}
 }
-.tagchip{
-  display:inline-flex; align-items:center; gap:9px; padding:7px 15px; border-radius:999px;
-  background:rgba(246,165,198,.1); border:1px solid rgba(246,165,198,.26);
-  font-size:12.5px; color:var(--pink); font-weight:600; letter-spacing:.04em;
-}
-.tagchip .pulse{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 10px var(--green);animation:pulse 1.9s infinite}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
-h1{
-  font-family:var(--display); font-weight:800; margin:16px 0 0;
-  font-size:clamp(56px,12vw,140px); line-height:.9; letter-spacing:-.025em;
-  background:linear-gradient(170deg,#fff 10%,var(--pink) 46%,var(--violet) 92%);
-  -webkit-background-clip:text; background-clip:text; color:transparent;
-  filter:drop-shadow(0 10px 44px rgba(169,123,255,.36));
-}
-.jp-big{font-family:var(--display); color:var(--faint); letter-spacing:.52em; font-size:clamp(12px,2.4vw,16px); margin:12px 0 0; text-indent:.52em}
-.lede{max-width:640px; margin:20px auto 0; font-size:clamp(17px,2.3vw,20px); color:var(--dim); line-height:1.6}
-.lede b{color:var(--txt); font-weight:600}
-.cta{display:flex; gap:12px; justify-content:center; flex-wrap:wrap; margin-top:28px}
+.tagchip{display:inline-flex;align-items:center;gap:9px;padding:7px 15px;border-radius:999px;border:1px solid var(--line2);background:rgba(255,255,255,.05);font:700 11px/1 var(--body);letter-spacing:.2em;text-transform:uppercase;color:var(--pink2)}
+.pulse{position:relative;width:8px;height:8px;border-radius:50%;background:var(--green)}
+.pulse::after{content:"";position:absolute;inset:-1px;border-radius:50%;border:2px solid rgba(63,224,165,.7);animation:pulse 1.8s ease-out infinite}
+@keyframes pulse{0%{transform:scale(1);opacity:1}100%{transform:scale(2.6);opacity:0}}
+.hero h1{font-size:clamp(64px,11vw,132px);line-height:.95;font-weight:800;margin:22px 0 4px;letter-spacing:-.04em;
+  background:linear-gradient(180deg,#fff 0%,var(--pink2) 45%,var(--violet2) 100%);-webkit-background-clip:text;background-clip:text;color:transparent;
+  filter:drop-shadow(0 12px 50px rgba(255,111,174,.28))}
+.hero .sub{font:500 clamp(18px,2.3vw,26px)/1.25 var(--display);color:var(--txt);margin:0 0 6px}
+.jp-big{font:500 14px var(--body);color:var(--faint);letter-spacing:.42em;margin:0 0 22px}
+.lede{font-size:clamp(17px,1.5vw,19px);color:var(--dim);max-width:600px;margin:0}
+.lede b{color:var(--txt);font-weight:600}
+.cta{display:flex;flex-wrap:wrap;gap:12px;margin:30px 0 26px;justify-content:center}
+.facts{display:flex;flex-wrap:wrap;gap:8px 18px;justify-content:center;font-size:13px;color:var(--faint);margin:0 0 26px}
+.facts span::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--teal);margin-right:8px;vertical-align:1px}
+.ca{display:flex;flex-direction:column;gap:8px}
+.ca-label{font-size:10.5px;letter-spacing:.26em;text-transform:uppercase;color:var(--faint);font-weight:600}
+.ca-box{display:flex;align-items:center;gap:10px;max-width:560px;padding:10px 10px 10px 16px;border-radius:14px;background:rgba(0,0,0,.35);border:1px solid var(--line)}
+.ca-box code{flex:1;font:500 14px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--txt);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ca-box.pending code{color:var(--faint);font-style:italic}
+.ca-copy{padding:8px 14px;border-radius:10px;border:1px solid var(--line2);background:rgba(255,255,255,.06);color:var(--txt);font:600 13px var(--body);cursor:pointer}
+.ca-copy.done{background:rgba(63,224,165,.15);border-color:rgba(63,224,165,.4);color:var(--green)}
 
-/* contract address */
-.ca{margin:24px auto 0; max-width:560px}
-.ca-label{font-size:10.5px; letter-spacing:.22em; color:var(--faint); text-transform:uppercase; margin-bottom:9px}
-.ca-box{
-  display:flex; align-items:center; gap:10px; padding:12px 14px; border-radius:14px;
-  background:rgba(0,0,0,.42); border:1px solid var(--line);
-}
-.ca-box code{
-  flex:1; font:500 13px/1.4 ui-monospace,'SF Mono',Menlo,monospace; color:var(--txt);
-  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:left;
-}
-.ca-box.pending code{color:var(--faint); font-style:italic}
-.ca-copy{
-  padding:8px 13px; border-radius:9px; border:1px solid var(--line); background:rgba(255,255,255,.06);
-  color:var(--dim); font:600 12px var(--body); cursor:pointer; transition:.18s; flex:0 0 auto;
-}
-.ca-copy:hover{color:var(--txt); background:rgba(255,255,255,.12)}
-.ca-copy.done{color:var(--green); border-color:rgba(110,231,168,.4)}
-
-/* ============================== loading her ============================== */
-#yui-load{
-  position:fixed; left:24px; bottom:24px; z-index:46;
-  display:flex; align-items:center; gap:12px; padding:11px 18px; border-radius:999px;
-  background:rgba(14,10,23,.92); border:1px solid var(--line); backdrop-filter:blur(12px);
-  font-size:13px; color:var(--dim); transition:opacity .5s, transform .5s;
-}
-#yui-load .bar{width:96px; height:4px; border-radius:2px; background:rgba(255,255,255,.1); overflow:hidden}
-#yui-load .bar i{display:block; height:100%; width:0; background:linear-gradient(90deg,var(--pink),var(--violet)); transition:width .2s}
-html.yui-ready #yui-load{opacity:0; transform:translateY(14px); pointer-events:none}
-
-/* her little control bar */
-#yui-dock{
-  position:fixed; right:18px; bottom:18px; z-index:46; display:flex; gap:6px;
-  padding:7px; border-radius:15px; background:rgba(14,10,23,.86); border:1px solid var(--line);
-  backdrop-filter:blur(14px); opacity:0; transform:translateY(10px); transition:.4s;
-}
-html.yui-ready #yui-dock{opacity:1; transform:none}
-#yui-dock button{
-  width:38px; height:38px; border-radius:10px; border:1px solid transparent; background:transparent;
-  color:var(--dim); cursor:pointer; font-size:16px; transition:.16s; display:grid; place-items:center;
-}
-#yui-dock button:hover{background:rgba(255,255,255,.09); color:var(--txt)}
-#yui-dock button.on{color:var(--pink)}
-@media(max-width:560px){ #yui-dock{right:10px; bottom:10px} }
-
-/* ============================== the tour ============================== */
-#yui-tour{
-  position:fixed; left:22px; bottom:22px; z-index:60; width:352px; max-width:calc(100vw - 32px);
-  padding:20px 20px 16px; border-radius:20px;
-  background:linear-gradient(165deg,rgba(30,22,46,.97),rgba(14,10,23,.97));
-  border:1px solid rgba(246,165,198,.24); backdrop-filter:blur(18px) saturate(1.3);
-  box-shadow:0 26px 70px rgba(0,0,0,.6), 0 0 0 1px rgba(0,0,0,.4), 0 0 60px -20px rgba(169,123,255,.5);
-  opacity:0; transform:translateY(18px) scale(.97); pointer-events:none;
-  transition:opacity .35s cubic-bezier(.2,.8,.3,1), transform .35s cubic-bezier(.2,.8,.3,1), border-color .3s;
-}
-#yui-tour.show{opacity:1; transform:none; pointer-events:auto}
-#yui-tour.ok{border-color:rgba(110,231,168,.5); box-shadow:0 26px 70px rgba(0,0,0,.6), 0 0 60px -18px rgba(110,231,168,.6)}
-#yui-tour.wide{width:396px}
-.t-top{display:flex; align-items:center; gap:10px; margin-bottom:9px}
-.t-eyebrow{font-size:10.5px; letter-spacing:.2em; text-transform:uppercase; color:var(--pink); font-weight:700}
-.t-x{margin-left:auto; background:transparent; border:0; color:var(--faint); font-size:19px; line-height:1; cursor:pointer; padding:2px 5px; border-radius:7px; transition:.15s}
-.t-x:hover{background:rgba(255,255,255,.08); color:var(--txt)}
-.t-title{font-family:var(--display); font-weight:800; font-size:23px; margin:0 0 8px; letter-spacing:-.01em}
-.t-body{margin:0; color:var(--dim); font-size:14.5px; line-height:1.58}
-.t-body b{color:var(--txt); font-weight:650}
-.t-hint{
-  margin:12px 0 0; padding:9px 12px; border-radius:11px; font-size:13px; color:var(--pink);
-  background:rgba(246,165,198,.09); border:1px solid rgba(246,165,198,.2);
-}
-.t-hint.bump{animation:bump .4s}
-@keyframes bump{0%,100%{transform:none}40%{transform:translateX(4px)}}
-.t-foot{display:flex; align-items:center; gap:12px; margin-top:16px}
-.t-dots{display:flex; gap:6px}
-.t-dots i{width:7px; height:7px; border-radius:50%; background:rgba(255,255,255,.15); transition:.3s}
-.t-dots i.on{background:var(--green)}
-.t-dots i.at{background:var(--pink); box-shadow:0 0 10px var(--pink); transform:scale(1.25)}
-.t-skip,.t-cta{
-  margin-left:auto; border:0; cursor:pointer; text-decoration:none; white-space:nowrap;
-  font:600 13.5px var(--body); padding:9px 16px; border-radius:11px; transition:.18s;
-}
-.t-skip{background:rgba(255,255,255,.06); color:var(--dim)}
-.t-skip:hover{background:rgba(255,255,255,.12); color:var(--txt)}
-.t-cta{background:linear-gradient(135deg,var(--pink),var(--violet)); color:#1a0c18; box-shadow:0 8px 24px rgba(246,165,198,.26)}
-.t-cta:hover{transform:translateY(-1px); box-shadow:0 12px 30px rgba(246,165,198,.4)}
-/* a soft halo on the floor under her, so "me" is never ambiguous while she wanders */
-#yui-halo{
-  position:fixed; z-index:39; pointer-events:none; border-radius:50%;
-  border:2px solid rgba(246,165,198,.55);
-  background:radial-gradient(closest-side,rgba(246,165,198,.16),transparent 72%);
-  animation:halopulse 1.9s ease-in-out infinite;
-}
-#yui-halo[hidden]{display:none}
-@keyframes halopulse{0%,100%{opacity:.45; transform:scale(.95)}50%{opacity:1; transform:scale(1.05)}}
-/* A phone has no spare corner. She is pinned to the bottom of the viewport, so a bottom sheet
-   would simply bury her — the card goes along the top instead, under the nav, and the hero keeps
-   its text in the strip between the two (--tour-h is the card's measured height).
-   That strip is only ~300px tall, so for the minute the tour is up the hero drops the two blocks
-   that are reachable anyway — its buttons live in the nav as "Buy $YUI" and "Get her", and the
-   tour's own last step links to the download. Both come back when the tour closes. */
-@media(max-width:720px){
-  #yui-tour{left:10px; right:10px; top:74px; bottom:auto; width:auto; max-width:none; padding:15px 16px 12px}
-  #yui-tour.wide{width:auto}
-  .t-title{font-size:20px; margin-bottom:6px}
-  .t-body{font-size:13px; line-height:1.5}
-  .t-hint{font-size:12.5px; padding:8px 11px; margin-top:10px}
-  .t-foot{margin-top:13px}
-  html.yui-touring .hero{padding-top:calc(var(--tour-h,0px) + 14px)}
-  html.yui-touring .hero .cta, html.yui-touring .hero .ca{display:none}
-  /* the wallet step's card is the tallest of them; this keeps the lede clear of her even then */
-  html.yui-touring h1{font-size:clamp(44px,11vw,110px); margin-top:12px}
-  html.yui-touring .lede{font-size:15.5px; margin-top:13px}
-  html.yui-touring .jp-big{margin-top:8px}
-  html.yui-touring #yui-load{display:none}
-}
-
-/* ============================== wallet widget ============================== */
-.w-row{display:flex; gap:9px; margin-top:15px}
-.w-row input{
-  flex:1; min-width:0; background:rgba(0,0,0,.45); border:1px solid var(--line); color:var(--txt);
-  border-radius:12px; padding:12px 14px; font:500 13.5px/1.2 ui-monospace,'SF Mono',Menlo,monospace;
-  transition:.16s;
-}
-.w-row input::placeholder{color:var(--faint); font-family:var(--body); font-size:13.5px}
-.w-row input:focus{outline:none; border-color:var(--pink); background:rgba(0,0,0,.6)}
-.w-row button{
-  flex:0 0 auto; border:0; cursor:pointer; border-radius:12px; padding:12px 20px;
-  font:650 14px var(--body); color:#1a0c18; transition:.18s;
-  background:linear-gradient(135deg,var(--pink),var(--violet));
-}
-.w-row button:hover{transform:translateY(-1px); filter:brightness(1.06)}
-[data-w-root].live .w-row button{background:rgba(255,255,255,.08); color:var(--dim)}
-.w-status{
-  display:flex; gap:9px; align-items:flex-start; margin-top:11px;
-  font-size:12.5px; line-height:1.5; color:var(--faint); min-height:18px;
-}
-.w-status::before{content:""; width:7px; height:7px; border-radius:50%; background:var(--faint); flex:0 0 auto; margin-top:6px}
-.w-status.ok{color:var(--green)} .w-status.ok::before{background:var(--green); box-shadow:0 0 8px var(--green)}
-.w-status.err{color:var(--red)} .w-status.err::before{background:var(--red)}
-
-/* ============================== try her ============================== */
-.try{
-  max-width:860px; margin:0 auto; padding:34px 32px; border-radius:24px;
-  background:linear-gradient(160deg,rgba(169,123,255,.1),rgba(246,165,198,.06));
-  border:1px solid var(--line2); text-align:center;
-}
-.try h2{margin-top:10px}
-.chips{display:flex; flex-wrap:wrap; gap:10px; justify-content:center; margin-top:24px}
-.chip{
-  display:inline-flex; align-items:center; gap:8px; padding:11px 18px; border-radius:999px;
-  border:1px solid var(--line); background:rgba(255,255,255,.05); color:var(--txt);
-  font:600 14px var(--body); cursor:pointer; transition:.18s; white-space:nowrap;
-}
-.chip:hover{transform:translateY(-2px); background:rgba(255,255,255,.1); border-color:var(--line2)}
-.chip:active{transform:translateY(0)}
-.chip.win{border-color:rgba(110,231,168,.32); color:var(--green)}
-.chip.win:hover{background:rgba(110,231,168,.12)}
-.chip.lose{border-color:rgba(255,138,158,.32); color:var(--red)}
-.chip.lose:hover{background:rgba(255,138,158,.12)}
-.chip.on{background:rgba(246,165,198,.16); border-color:rgba(246,165,198,.42); color:var(--pink)}
-.try .foot-note{margin:22px 0 0; font-size:13px; color:var(--faint)}
+/* ============================== marquee ============================== */
+.strip{border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:rgba(255,255,255,.02);overflow:hidden;padding:14px 0}
+.strip .track{display:flex;gap:44px;white-space:nowrap;animation:strip 38s linear infinite;width:max-content;will-change:transform}
+.strip span{font:600 13px var(--body);letter-spacing:.18em;text-transform:uppercase;color:var(--faint)}
+.strip span i{font-style:normal;color:var(--pink);margin-right:44px}
+@keyframes strip{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 
 /* ============================== cards ============================== */
-.sec-head{text-align:center; margin-bottom:46px}
-.eyebrow{font-size:10.5px; letter-spacing:.24em; text-transform:uppercase; color:var(--pink); font-weight:700}
-h2{font-family:var(--display); font-weight:800; font-size:clamp(32px,5.2vw,46px); margin:14px 0 0; letter-spacing:-.018em}
-.sec-head p{color:var(--dim); max-width:580px; margin:15px auto 0}
-.grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(252px,1fr)); gap:18px}
-.card{
-  padding:26px; border-radius:var(--r); background:var(--card); border:1px solid var(--line);
-  transition:.25s; position:relative; overflow:hidden;
-}
-.card::before{
-  content:""; position:absolute; inset:0 0 auto; height:1px;
-  background:linear-gradient(90deg,transparent,rgba(255,255,255,.22),transparent); opacity:0; transition:.25s;
-}
-.card:hover{transform:translateY(-4px); border-color:rgba(246,165,198,.3); background:var(--card2)}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+@media(max-width:940px){.grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:600px){.grid{grid-template-columns:1fr}}
+.card{position:relative;padding:26px 24px 24px;border-radius:var(--r);background:var(--card);border:1px solid var(--line);overflow:hidden;transition:.25s}
+.card::before{content:"";position:absolute;inset:0;background:radial-gradient(120% 80% at 0% 0%,rgba(255,111,174,.14),transparent 60%);opacity:0;transition:.3s}
+.card:hover{transform:translateY(-4px);border-color:var(--line2);background:var(--card2)}
 .card:hover::before{opacity:1}
-.card .ico{font-size:26px; margin-bottom:14px; display:block}
-.card h3{font-family:var(--display); font-weight:700; font-size:19px; margin:0 0 8px}
-.card p{margin:0; color:var(--dim); font-size:14.5px; line-height:1.6}
-.card.win{border-color:rgba(110,231,168,.24)} .card.win h3{color:var(--green)}
-.card.lose{border-color:rgba(255,138,158,.24)} .card.lose h3{color:var(--red)}
+.card.win::before{background:radial-gradient(120% 80% at 0% 0%,rgba(63,224,165,.16),transparent 60%)}
+.card.lose::before{background:radial-gradient(120% 80% at 0% 0%,rgba(255,92,138,.16),transparent 60%)}
+.card .ico{display:inline-grid;place-items:center;width:46px;height:46px;border-radius:14px;background:rgba(255,255,255,.06);border:1px solid var(--line);font-size:22px;margin-bottom:16px}
+.card h3{font-size:19px;font-weight:600;margin:0 0 8px}
+.card p{margin:0;color:var(--dim);font-size:15px}
 
-/* ============================== wallet section ============================== */
-.wallet-box{
-  max-width:760px; margin:0 auto; padding:34px 32px; border-radius:24px;
-  background:linear-gradient(155deg,rgba(110,231,168,.07),rgba(169,123,255,.08));
-  border:1px solid rgba(110,231,168,.22);
-}
-.wallet-box h3{font-family:var(--display); font-weight:700; font-size:20px; margin:0 0 6px}
-.wallet-box > p{margin:0; color:var(--dim); font-size:14.5px}
-.safety{display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:12px; margin-top:24px}
-.safety div{
-  padding:14px 16px; border-radius:13px; background:rgba(0,0,0,.26); border:1px solid var(--line);
-  font-size:13px; color:var(--dim); line-height:1.5;
-}
-.safety b{display:block; color:var(--txt); font-size:13.5px; font-weight:650; margin-bottom:3px}
+/* ============================== try her ============================== */
+.try{text-align:center;padding:44px 28px;border-radius:26px;background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.02));border:1px solid var(--line);position:relative;overflow:hidden}
+.try::before{content:"";position:absolute;inset:-40%;background:conic-gradient(from 200deg,transparent,rgba(255,111,174,.12),transparent 30%,rgba(124,92,255,.12),transparent 60%);pointer-events:none}
+.try>*{position:relative}
+.chips{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin:24px 0 8px}
+.chip{padding:12px 18px;border-radius:999px;border:1px solid var(--line2);background:rgba(255,255,255,.06);color:var(--txt);font:600 14px var(--body);cursor:pointer;transition:.18s}
+.chip:hover{transform:translateY(-2px);background:rgba(255,255,255,.1)}
+.chip.win{border-color:rgba(63,224,165,.4);color:var(--green)} .chip.lose{border-color:rgba(255,92,138,.4);color:var(--red)}
+.chip.on{background:rgba(255,111,174,.16);border-color:var(--pink)}
+.foot-note{font-size:13px;color:var(--faint);margin:14px 0 0}
 
-/* ============================== steps ============================== */
-.steps{display:grid; gap:14px; counter-reset:s; max-width:760px; margin:0 auto}
-.step{
-  display:flex; gap:18px; padding:22px 24px; border-radius:var(--r);
-  background:var(--card); border:1px solid var(--line);
-}
-.step::before{
-  counter-increment:s; content:counter(s);
-  flex:0 0 38px; height:38px; border-radius:11px; display:grid; place-items:center;
-  background:linear-gradient(135deg,var(--pink),var(--violet)); color:#1a0c18;
-  font:800 17px var(--display);
-}
-.step h4{margin:5px 0 6px; font-family:var(--display); font-weight:700; font-size:17px}
-.step p{margin:0; color:var(--dim); font-size:14.5px}
-.step code{background:rgba(0,0,0,.45); padding:2px 7px; border-radius:6px; font-size:13px; color:var(--pink)}
+/* ============================== how it works ============================== */
+.flow{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;align-items:center;gap:14px;margin:0 0 30px}
+@media(max-width:820px){.flow{grid-template-columns:1fr}.flow .arrow{transform:rotate(90deg);justify-self:center}}
+.node{padding:22px 20px;border-radius:var(--r);background:var(--card);border:1px solid var(--line);text-align:center}
+.node .k{font:700 11px var(--body);letter-spacing:.2em;text-transform:uppercase;color:var(--teal);margin-bottom:8px}
+.node h4{font-size:18px;font-weight:600;margin:0 0 6px}
+.node p{margin:0;color:var(--dim);font-size:14px}
+.arrow{color:var(--faint);font-size:24px}
+.facts2{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+@media(max-width:820px){.facts2{grid-template-columns:1fr}}
+.fact{padding:20px 22px;border-radius:16px;border:1px solid var(--line);background:rgba(0,0,0,.25)}
+.fact b{display:block;font-family:var(--display);font-size:17px;margin-bottom:6px}
+.fact p{margin:0;color:var(--dim);font-size:14px}
 
-.note{
-  display:flex; gap:13px; padding:17px 20px; border-radius:15px; margin-top:16px;
-  background:rgba(242,199,63,.07); border:1px solid rgba(242,199,63,.2);
-  font-size:14px; color:var(--dim); max-width:760px; margin-inline:auto; line-height:1.6;
-}
-.note b{color:var(--gold)}
-.note.plain{background:rgba(255,255,255,.035); border-color:var(--line)} .note.plain b{color:var(--txt)}
+/* ============================== the name ============================== */
+.name-band{position:relative;display:grid;grid-template-columns:auto minmax(0,1fr);gap:40px;align-items:center;max-width:900px;margin:0 auto;padding:40px 44px;border-radius:26px;
+  background:linear-gradient(150deg,rgba(255,111,174,.09),rgba(124,92,255,.06) 60%,transparent);border:1px solid var(--line)}
+.name-band .kanji{font:700 clamp(84px,11vw,132px)/1 var(--display);background:linear-gradient(180deg,#fff,var(--pink2) 50%,var(--violet2));-webkit-background-clip:text;background-clip:text;color:transparent;
+  filter:drop-shadow(0 10px 40px rgba(255,111,174,.25));text-align:center}
+.name-band .kanji small{display:block;font:600 12px var(--body);letter-spacing:.34em;color:var(--faint);margin-top:10px;-webkit-text-fill-color:var(--faint)}
+.name-band h2{font-size:clamp(26px,3.4vw,36px);margin:0 0 10px}
+.name-band p{color:var(--dim);margin:0 0 12px;font-size:16px}
+.name-band p:last-child{margin-bottom:0}
+.name-band b{color:var(--txt);font-weight:600}
+.name-band em{color:var(--pink2);font-style:normal}
+@media(max-width:760px){.name-band{grid-template-columns:1fr;gap:18px;padding:32px 24px;text-align:center}}
 
-/* ============================== fees ============================== */
-.fees{
-  max-width:760px; margin:0 auto; padding:40px 34px; border-radius:24px; text-align:center;
-  background:linear-gradient(150deg,rgba(110,231,168,.08),rgba(169,123,255,.09));
-  border:1px solid rgba(110,231,168,.22);
-}
-.fees h2{font-size:clamp(26px,4vw,36px)}
-.fees p{color:var(--dim); max-width:520px; margin:15px auto 0}
+/* ============================== wallet ============================== */
+.wallet-box{max-width:720px;margin:0 auto;padding:30px;border-radius:26px;background:var(--card);border:1px solid var(--line)}
+.wallet-box h3{font-size:22px;margin:0 0 6px}
+.wallet-box>p{color:var(--dim);margin:0 0 18px;font-size:15px}
+.w-row{display:flex;gap:10px}
+.w-row input{flex:1;min-width:0;padding:14px 16px;border-radius:14px;border:1px solid var(--line2);background:rgba(0,0,0,.35);color:var(--txt);font:500 15px var(--body);outline:none}
+.w-row input:focus{border-color:var(--pink);box-shadow:0 0 0 3px rgba(255,111,174,.16)}
+.w-row button{padding:14px 22px;border-radius:14px;border:0;background:linear-gradient(135deg,var(--pink),var(--violet));color:#fff;font:600 15px var(--body);cursor:pointer;white-space:nowrap}
+[data-w-root].live .w-row button{background:rgba(255,255,255,.08);color:var(--dim)}
+.w-status{min-height:22px;margin:12px 0 0;font-size:14px;color:var(--faint)}
+.w-status.ok{color:var(--green)} .w-status.err{color:var(--red)}
+.safety{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:22px}
+@media(max-width:640px){.safety{grid-template-columns:1fr}}
+.safety div{padding:14px;border-radius:14px;background:rgba(0,0,0,.25);border:1px solid var(--line);font-size:13px;color:var(--dim)}
+.safety b{display:block;color:var(--txt);margin-bottom:3px;font-weight:600}
+
+/* ============================== get her ============================== */
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;counter-reset:s}
+@media(max-width:820px){.steps{grid-template-columns:1fr}}
+.step{position:relative;padding:26px 22px 22px;border-radius:var(--r);background:var(--card);border:1px solid var(--line);counter-increment:s}
+.step::before{content:counter(s,decimal-leading-zero);position:absolute;top:18px;right:20px;font:800 30px var(--display);color:rgba(255,255,255,.07)}
+.step h4{font-size:18px;font-weight:600;margin:0 0 8px}
+.step p{margin:0;color:var(--dim);font-size:14.5px}
+.step code{font:500 13px ui-monospace,Menlo,monospace;background:rgba(255,255,255,.07);padding:2px 7px;border-radius:6px}
+.note{display:flex;gap:14px;align-items:flex-start;padding:18px 20px;border-radius:16px;background:rgba(242,199,63,.07);border:1px solid rgba(242,199,63,.25);color:var(--dim);font-size:14.5px;margin:18px auto 0;max-width:820px}
+.note.plain{background:rgba(255,255,255,.04);border-color:var(--line)}
+.note b{color:var(--txt);font-weight:600}
+.note span{font-size:20px;line-height:1.2}
+
+/* ============================== the two ways ============================== */
+.ways{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media(max-width:900px){.ways{grid-template-columns:1fr}}
+.way{display:flex;flex-direction:column;padding:30px 28px;border-radius:24px;background:var(--card);border:1px solid var(--line)}
+.way .ico{display:inline-grid;place-items:center;width:46px;height:46px;border-radius:14px;background:rgba(255,255,255,.06);border:1px solid var(--line);font-size:22px;margin-bottom:16px}
+.way h3{font-size:23px;font-weight:650;margin:4px 0 10px}
+.way > p{color:var(--dim);margin:0 0 16px;font-size:15.5px}
+.way ol{margin:0 0 20px;padding-left:20px;color:var(--dim);font-size:14.5px}
+.way ol li{margin:6px 0}
+.way ol li b{color:var(--txt);font-weight:600}
+.way .btn{align-self:flex-start;margin-top:auto;padding:16px 28px;font-size:16px}
+.way .small{margin:12px 0 0;color:var(--faint);font-size:13px}
+.way code{font:500 13px ui-monospace,Menlo,monospace;background:rgba(255,255,255,.07);padding:2px 7px;border-radius:6px}
+
+/* ============================== open source ============================== */
+.oss{display:grid;grid-template-columns:1.2fr 1fr;gap:24px;align-items:stretch}
+@media(max-width:900px){.oss{grid-template-columns:1fr}}
+.repo{padding:30px;border-radius:26px;background:linear-gradient(160deg,rgba(124,92,255,.14),rgba(255,111,174,.08));border:1px solid var(--line2)}
+.repo .path{display:inline-flex;align-items:center;gap:10px;font:500 15px ui-monospace,Menlo,monospace;padding:9px 14px;border-radius:12px;background:rgba(0,0,0,.35);border:1px solid var(--line);color:var(--txt);text-decoration:none}
+.repo .path svg{width:18px;height:18px;fill:currentColor}
+.repo h3{font-size:26px;margin:16px 0 8px}
+.repo p{color:var(--dim);margin:0 0 18px}
+.repo .row{display:flex;flex-wrap:wrap;gap:10px}
+.stack{display:grid;gap:10px}
+.stack div{display:flex;justify-content:space-between;gap:12px;padding:14px 18px;border-radius:14px;background:var(--card);border:1px solid var(--line);font-size:14.5px}
+.stack div span:last-child{color:var(--faint);white-space:nowrap}
+
+/* ============================== roadmap ============================== */
+.road{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+@media(max-width:940px){.road{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:560px){.road{grid-template-columns:1fr}}
+.road div{padding:18px;border-radius:16px;background:var(--card);border:1px solid var(--line);font-size:14.5px;color:var(--dim)}
+.road b{display:block;color:var(--txt);font-weight:600;margin-bottom:4px}
+.road .tag{display:inline-block;margin-top:10px;font:700 10px var(--body);letter-spacing:.18em;text-transform:uppercase;padding:4px 8px;border-radius:999px;background:rgba(255,255,255,.06);color:var(--faint)}
+.road .tag.now{background:rgba(63,224,165,.14);color:var(--green)} .road .tag.soon{background:rgba(242,199,63,.14);color:var(--gold)}
 
 /* ============================== footer ============================== */
-footer{
-  margin-top:96px; padding:38px 0 var(--foot-pad,340px);
-  border-top:1px solid var(--line); color:var(--faint); font-size:13.5px;
+footer{margin-top:60px;padding:38px 0 var(--foot-pad,340px);border-top:1px solid var(--line);color:var(--faint);font-size:14px}
+footer .wrap{display:flex;flex-wrap:wrap;gap:12px 22px;align-items:center}
+footer a{color:var(--dim);text-decoration:none} footer a:hover{color:var(--txt)}
+footer .sp{flex:1}
+footer .fb{display:flex;align-items:center;gap:10px;font:700 16px var(--display);color:var(--txt)}
+footer .fb img{width:24px;height:24px}
+
+/* ============================== the starter ============================== */
+/* The lesson sits *over* the site: the page renders behind it, dimmed, so the header and the
+   hero are visible the whole time and it reads as a website with a lesson on top. Above her
+   stage (40) it would cover her — she teaches in front of the card, so it stays below. */
+#starter{display:none;position:fixed;inset:0;z-index:36;background:rgba(6,5,12,.82);transition:opacity .7s ease}
+html.yui-starter #starter{display:block}
+#starter.out{opacity:0;pointer-events:none}
+#starter .head{position:absolute;left:0;right:0;top:92px;text-align:center;pointer-events:none}
+#starter .head .eyebrow{display:block;margin-bottom:5px}
+#starter .head h2{font-size:clamp(22px,2.6vw,32px);font-weight:700;margin:0;color:var(--txt)}
+#starter .head p{margin:6px 0 0;color:var(--dim);font-size:14.5px}
+/* the card: almost the page, with room at the edges. Its height follows the chart band it crops
+   (the token header, the chart and the buy ticket) — yui-starter.js does the arithmetic. */
+#starter .frame{position:absolute;left:50%;transform:translateX(-50%);top:182px;width:min(94vw,1560px);border-radius:20px;border:1px solid var(--line2);background:#101114;overflow:hidden;
+  box-shadow:0 40px 90px rgba(0,0,0,.6),0 0 70px rgba(124,92,255,.12),0 0 0 1px rgba(255,255,255,.04) inset;opacity:0;transition:opacity .5s ease}
+#starter .frame.up{opacity:1}
+#starter .frame iframe{display:block;width:1600px;height:900px;border:0;background:#101114;transform-origin:0 0}
+/* the lesson's own Yui, over the card and never in the way of a click */
+#starter iframe.yui{position:absolute;inset:0;width:100%;height:100%;border:0;background:transparent;pointer-events:none;z-index:3}
+#starter .cap{position:absolute;left:0;right:0;z-index:2;text-align:center;color:var(--faint);font-size:12px;letter-spacing:.14em;text-transform:uppercase;font-weight:600}
+@media(max-width:900px){#starter .head{top:84px}#starter .head p{display:none}}
+/* only the button she is pointing at can be touched: these four panes cover the rest of the card */
+#starter .shield i{position:fixed;z-index:2;display:block;background:transparent;cursor:default}
+/* The way out of the lesson. Hers, not a browser default: dark glass with a hairline that warms
+   to pink, a quiet line of small caps over the label so it reads as a choice rather than a
+   dismissal, and an arrow that leans out on hover. */
+#starter .skip{position:absolute;right:38px;bottom:34px;z-index:4;display:inline-flex;align-items:center;gap:16px;padding:22px 42px 20px;border-radius:20px;
+  border:1px solid rgba(255,255,255,.13);background:linear-gradient(150deg,rgba(255,255,255,.09),rgba(255,255,255,.035));color:var(--txt);
+  text-align:left;cursor:pointer;transition:transform .22s cubic-bezier(.2,1,.3,1),box-shadow .25s,border-color .25s,background .25s;
+  box-shadow:0 20px 54px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.03) inset;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+#starter .skip .lines{display:flex;flex-direction:column;gap:5px}
+#starter .skip .k{font:700 10.5px/1 var(--body);letter-spacing:.26em;text-transform:uppercase;color:var(--faint);transition:color .25s}
+#starter .skip .v{font:650 30px/1 var(--display);letter-spacing:-.015em}
+#starter .skip .arrow{display:grid;place-items:center;width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,.07);
+  border:1px solid rgba(255,255,255,.12);font-size:19px;color:var(--dim);transition:transform .25s,background .25s,color .25s,border-color .25s}
+#starter .skip:hover{transform:translateY(-3px);border-color:rgba(255,111,174,.5);background:linear-gradient(150deg,rgba(255,111,174,.16),rgba(124,92,255,.1));
+  box-shadow:0 26px 68px rgba(0,0,0,.55),0 0 36px rgba(255,111,174,.2)}
+#starter .skip:hover .k{color:var(--pink2)}
+#starter .skip:hover .arrow{transform:translateX(4px);background:rgba(255,111,174,.22);border-color:rgba(255,111,174,.45);color:#fff}
+#starter .skip:active{transform:translateY(-1px)}
+@media(max-width:900px){
+  #starter .skip{right:14px;bottom:16px;padding:15px 22px 13px;gap:12px;border-radius:16px}
+  #starter .skip .v{font-size:21px} #starter .skip .k{font-size:9px;letter-spacing:.2em}
+  #starter .skip .arrow{width:34px;height:34px;font-size:16px}
 }
-footer .wrap{display:flex; gap:16px; flex-wrap:wrap; align-items:center}
-footer a{color:var(--dim); text-decoration:none} footer a:hover{color:var(--txt)}
-footer .sp{margin-left:auto}
-@media(max-width:560px){ footer{padding-bottom:280px} }
+/* the lesson's card, over the button it is about */
+#starter .hint{position:absolute;z-index:3;transform:translate(-50%,-100%);width:min(320px,calc(100vw - 32px));padding:14px 16px;border-radius:16px;background:rgba(13,11,18,.97);border:1px solid rgba(255,111,174,.55);box-shadow:0 20px 60px rgba(0,0,0,.6),0 0 30px rgba(255,111,174,.18);color:var(--txt);font-size:14px;line-height:1.5;pointer-events:none}
+#starter .hint .eyebrow{display:block;margin-bottom:4px}
+#starter .hint p{margin:0}
+#starter .hint b{color:var(--pink2)}
+#starter .hint .arrow{position:absolute;left:50%;bottom:-9px;width:16px;height:16px;transform:translateX(-50%) rotate(45deg);background:rgba(13,11,18,.97);border-right:1px solid rgba(255,111,174,.55);border-bottom:1px solid rgba(255,111,174,.55)}
+#starter .hint.pop{animation:hint-pop .45s cubic-bezier(.2,1.2,.3,1) both}
+@keyframes hint-pop{from{opacity:0;transform:translate(-50%,-100%) translateY(10px)}to{opacity:1;transform:translate(-50%,-100%)}}
+html.yui-starter,html.yui-starter body{overflow:hidden}
+html.yui-starter #yui-dock,html.yui-starter #yui-load{display:none}
+/* The site's own header stays lit above the lesson, so it reads as this website with a lesson on
+   top of it rather than a page of its own. It is only a sign while the lesson runs — the way out
+   is the Skip button — so it takes no clicks. */
+html.yui-starter .nav{z-index:37;background:rgba(8,6,14,.96);border-bottom-color:var(--line2)}
+html.yui-starter .nav .wrap{pointer-events:none}
+html.yui-starter .nav nav a,html.yui-starter .nav .replay,html.yui-starter .nav .btn{opacity:.5}
+
+/* ============================== a phone ============================== */
+@media(max-width:760px){
+  .wrap{width:calc(100% - 28px)}
+  .pad{padding:64px 0}
+  .hero{min-height:auto;padding:36px 0 var(--yui-band,320px)}
+  .hero h1{font-size:clamp(56px,20vw,92px)}
+  .cta{gap:10px}
+  .cta .btn{flex:1 1 100%;justify-content:center}
+  .facts{gap:6px 14px;font-size:12px}
+  .sec-head{margin-bottom:26px}
+  .sec-head p{font-size:15.5px}
+  .try{padding:30px 18px}
+  .chips{gap:8px}
+  .chip{padding:10px 14px;font-size:13px}
+  .wallet-box{padding:22px 18px}
+  .w-row{flex-direction:column}
+  .w-row button{width:100%}
+  .way{padding:24px 20px}
+  .way .btn{align-self:stretch;justify-content:center}
+  .ca-box{padding:9px 9px 9px 13px}
+  .ca-box code{font-size:12.5px}
+  /* her dock sits above the footer, out of her way */
+  /* her reactions, as the first thing on the page: a thumb-sized grid */
+  #try{padding-top:26px}
+  #try .try{padding:26px 14px}
+  #try .chips{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:20px 0 8px}
+  #try .chip{padding:14px 10px;font-size:14.5px;border-radius:14px;justify-content:center}
+  #try .chip:nth-last-child(1){grid-column:1 / -1}
+  #try .foot-note{font-size:12.5px}
+  #yui-dock{right:10px;bottom:10px;padding:5px;gap:4px}
+  #yui-dock button{width:38px;height:38px;font-size:16px}
+  #yui-load{left:10px;right:10px;bottom:10px;justify-content:center}
+  /* the glass tells a phone what it is waiting for */
+  #yui-intro .load{width:min(320px,calc(100vw - 32px))}
+  #yui-intro .load .mark{font-size:36px}
+  #yui-intro .hint{bottom:22px;font-size:13px}
+}
+
+/* ============================== the first visit ============================== */
+/* Above the page and its header (30), below her stage (40), her bubble (45) and her tour card
+   (55): the site is behind glass until she has said hello. */
+#yui-intro{display:none;position:fixed;inset:0;z-index:35;background:rgba(8,6,14,.78);transition:opacity .7s ease}
+html.yui-intro #yui-intro{display:block}
+#yui-intro.out{opacity:0;pointer-events:none}
+/* the loader: where she is about to appear — a soft glow at her spot, her name, the download —
+   gone the moment she fades in there */
+#yui-intro .load{position:absolute;left:16vw;top:52%;transform:translate(-50%,-50%);text-align:center;width:300px;transition:opacity .45s ease}
+@media(max-width:1199px){#yui-intro .load{left:50%}}
+#yui-intro .load::before{content:"";position:absolute;left:50%;top:50%;width:360px;height:360px;transform:translate(-50%,-50%);border-radius:50%;background:radial-gradient(circle,rgba(255,111,174,.16),rgba(124,92,255,.08) 45%,transparent 70%);animation:breathe 2.6s ease-in-out infinite;pointer-events:none}
+@keyframes breathe{0%,100%{opacity:.7;transform:translate(-50%,-50%) scale(.96)}50%{opacity:1;transform:translate(-50%,-50%) scale(1.04)}}
+#yui-intro .load>*{position:relative}
+#yui-intro .load .mark{display:block;font:800 44px/1 var(--display);letter-spacing:-.03em;background:linear-gradient(180deg,#fff,var(--pink2) 55%,var(--violet2));-webkit-background-clip:text;background-clip:text;color:transparent;margin-bottom:10px}
+#yui-intro .load h3{font-size:17px;font-weight:600;margin:0 0 4px;color:var(--txt)}
+#yui-intro .load p{margin:0 0 14px;color:var(--dim);font-size:14px}
+#yui-intro .bar{display:block;width:200px;height:4px;margin:0 auto;border-radius:2px;background:rgba(255,255,255,.1);overflow:hidden}
+#yui-intro .bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--pink),var(--violet));transition:width .2s linear}
+#yui-intro.here .load{opacity:0;pointer-events:none}
+/* the hint, once she is here: out of the way at the bottom, the card does the talking */
+#yui-intro .hint{position:absolute;left:50%;bottom:34px;transform:translateX(-50%);text-align:center;color:var(--dim);font-size:14px;width:min(420px,calc(100vw - 40px));opacity:0;transition:opacity .5s .3s}
+#yui-intro.here .hint{opacity:1}
+#yui-intro .hint .eyebrow{display:block;margin-bottom:4px}
+#yui-intro .hint p{margin:0;color:var(--txt);font-size:15px}
+html.yui-intro #yui-load{display:none}
+/* she fades in at her spot rather than popping into the frame; the stage is hers alone */
+#yui-stage{opacity:0;transition:opacity .6s ease}
+html.yui-ready #yui-stage{opacity:1}
+@keyframes hint-in{from{opacity:0;transform:translate(-50%,8px)}to{opacity:1;transform:translate(-50%,0)}}
+html.yui-intro,html.yui-intro body{overflow:hidden}
+html.yui-intro #yui-dock{display:none}
+
+/* ============================== Yui's fixtures ============================== */
+#yui-load{position:fixed;left:24px;bottom:24px;z-index:46;display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:14px;background:rgba(13,11,18,.92);border:1px solid var(--line2);font-size:13px;color:var(--dim);transition:opacity .4s}
+#yui-load .bar{width:120px;height:4px;border-radius:2px;background:rgba(255,255,255,.08);overflow:hidden}
+#yui-load .bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--pink),var(--violet));transition:width .15s linear}
+html.yui-ready #yui-load{opacity:0;pointer-events:none}
+html.yui-failed #yui-load{opacity:1;pointer-events:auto;border-color:rgba(255,92,138,.4);color:var(--red)}
+#yui-dock{position:fixed;right:18px;bottom:18px;z-index:46;display:flex;gap:6px;padding:6px;border-radius:16px;background:rgba(13,11,18,.92);border:1px solid var(--line2)}
+#yui-dock button{width:42px;height:42px;border-radius:12px;border:0;background:transparent;font-size:18px;cursor:pointer;color:var(--txt);transition:.15s}
+#yui-dock button:hover{background:rgba(255,255,255,.08)}
+#yui-dock button.on{background:rgba(255,111,174,.18)}
+.hide-sm{}
+@media(max-width:900px){.hide-sm{display:none}}
 </style>
+<link rel="preload" as="fetch" crossorigin href="trade/tapes/25YZyQ4p8wRVkwPtyvQ4VWPNdHMStEXe5h84FVAAqaWR.json">
+<link rel="stylesheet" href="pet.css">
 </head>
 <body>
 
 <header class="nav">
   <div class="wrap">
-    <a class="brand" href="#top"><span class="orb"></span>YUI<span class="jp">ユイ</span></a>
-    <nav>
-      <a href="#try" class="hide-sm">Try her</a>
-      <a href="#wallet" class="hide-sm">Your wallet</a>
-      <a href="#get">Get her</a>
-      <a class="btn primary" id="navBuy" href="#" style="padding:9px 17px;font-size:14px">Buy $YUI</a>
+    <a class="brand" href="#top"><img src="assets/icon.png" alt="">YUI<span class="jp">ユイ</span></a>
+    <button class="burger" id="burger" aria-label="Menu">☰</button>
+    <nav id="menu">
+      <a href="#her" data-nav="her">What she does</a>
+      <a href="#try" data-nav="try">Try her</a>
+      <a href="#name" data-nav="name" class="hide-sm">The name</a>
+      <a href="#wallet" data-nav="wallet">Your wallet</a>
+      <a href="#get" data-nav="get">Get her</a>
+      <a href="docs.html" data-yui-say="The docs! Everything about me~">Docs</a>
+      <button class="replay" id="navDemo" title="Watch the trade demo again">↻ Demo</button>
+      <span class="icons">
+        <a class="ib" id="navGh" href="#" target="_blank" rel="noopener" title="GitHub" data-yui-say="I'm open source~ Go star me!"><svg viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg></a>
+        <a class="ib" id="navX" href="#" target="_blank" rel="noopener" title="X" data-yui-say="Follow me on X~"><svg viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg></a>
+        <a class="ib" id="navTg" href="#" target="_blank" rel="noopener" title="Telegram" hidden><svg viewBox="0 0 24 24"><path d="M9.04 15.47 8.7 20.2c.48 0 .69-.21.95-.46l2.27-2.17 4.7 3.44c.86.48 1.48.23 1.7-.8L21.9 4.4c.28-1.26-.46-1.76-1.3-1.44L2.4 9.98c-1.23.48-1.21 1.17-.21 1.48l4.66 1.45L17.66 6.1c.51-.31.97-.14.59.17z"/></svg></a>
+      </span>
+      <a class="btn primary" id="navBuy" href="#" data-yui-say="Buy my coin? Ehehe~" data-yui-mood="up">Buy $YUI</a>
     </nav>
   </div>
 </header>
 
 <section class="hero" id="top">
   <div class="wrap">
-    <span class="tagchip"><span class="pulse"></span>LIVE ON PUMP.FUN</span>
-    <h1>YUI</h1>
-    <p class="jp-big">トレンチワイフ</p>
-    <p class="lede">
-      She lives on your taskbar, not in a browser tab. She watches your wallet,
-      holds up your live PnL on a little chalkboard, <b>glows gold when you win</b>
-      and turns up <b>bruised and bloody when you don't</b>.
-    </p>
-
-    <div class="cta">
-      <a class="btn primary" id="heroBuy" href="#">Buy $YUI on pump.fun</a>
-      <a class="btn green" id="heroDl" href="#get">Download for Windows <small id="dlSize"></small></a>
-    </div>
-
-    <div class="ca">
-      <div class="ca-label">Contract address</div>
-      <div class="ca-box" id="caBox">
-        <code id="caText">not published yet</code>
-        <button class="ca-copy" id="caCopy">Copy</button>
+    <div class="copy">
+      <span class="tagchip"><span class="pulse"></span>Live on pump.fun · open source</span>
+      <h1>YUI</h1>
+      <p class="sub">Your <span class="grad">Trading Companion</span></p>
+      <p class="jp-big">トレンチワイフ</p>
+      <p class="lede">
+        A 3D anime girl who lives on your taskbar — or on the terminal you trade from — watching your wallet and feeling every trade with you.
+        She holds up your live PnL on a little board, <b>glows gold when you win</b> and turns up
+        <b>bruised and bloody when you don't</b>. Pick her up. Throw her. Dress her. She's yours.
+      </p>
+      <div class="cta">
+        <a class="btn primary" id="heroBuy" href="#" data-yui-say="Buy my coin? Ehehe~" data-yui-mood="up">Buy $YUI on pump.fun</a>
+        <a class="btn green" id="heroDl" href="#get" data-yui-say="Take me home~!" data-yui-mood="wow">Download for Windows <small id="dlSize"></small></a>
+        <a class="btn chrome" id="heroExt" href="#get" data-yui-say="Or keep me in your browser~">
+          <svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#4285F4" d="M24 9h17.5a20 20 0 0 0-33-4.2L16 19A10 10 0 0 1 24 9z"/><path fill="#EA4335" d="M8.5 4.8A20 20 0 0 0 12 39.6l7.6-13.2A10 10 0 0 1 16 19z"/><path fill="#FBBC05" d="M19.6 26.4 12 39.6A20 20 0 0 0 43.3 31H27.7a10 10 0 0 1-8.1-4.6z"/><path fill="#34A853" d="M43.3 31A20 20 0 0 0 41.5 9H24a10 10 0 0 1 3.7 22z"/><circle fill="#fff" cx="24" cy="24" r="7.5"/></svg>
+          Chrome Extension</a>
+        <a class="btn gh" id="heroGh" href="#" target="_blank" rel="noopener" data-yui-say="I'm open source~ Go star me!" data-yui-mood="up">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+          GitHub</a>
+        <a class="btn ghost" href="docs.html" data-yui-say="Read all about me~">Read the docs</a>
       </div>
+      <div class="facts">
+        <span>Free</span><span>Desktop · Chrome · mobile</span><span>MIT open source</span><span>No wallet connection</span><span>Any VRM avatar</span>
+      </div>
+      <div class="ca">
+        <div class="ca-label">Contract address</div>
+        <div class="ca-box" id="caBox">
+          <code id="caText">not published yet</code>
+          <button class="ca-copy" id="caCopy" data-yui-say="Copied~ Don't lose it!">Copy</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="strip" aria-hidden="true"><div class="track">
+  <span><i>✦</i>Glows on profit</span><span><i>✦</i>Bruises on loss</span><span><i>✦</i>Live PnL board</span><span><i>✦</i>Real physics</span><span><i>✦</i>Reads a public address only</span><span><i>✦</i>Any VRM avatar</span><span><i>✦</i>Open source</span>
+  <span><i>✦</i>Glows on profit</span><span><i>✦</i>Bruises on loss</span><span><i>✦</i>Live PnL board</span><span><i>✦</i>Real physics</span><span><i>✦</i>Reads a public address only</span><span><i>✦</i>Any VRM avatar</span><span><i>✦</i>Open source</span>
+</div></div>
+
+<section class="pad" id="her">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">Not a screensaver</span>
+      <h2>She feels your trades</h2>
+      <p>Paste an address and every fill reaches her within a second, as it happens — on your desktop or in your browser. No signup, no key, nothing to connect: she only ever <em>watches</em>.</p>
+    </div>
+    <div class="grid">
+      <div class="card win" data-yui-hover="Wins make me shine~" data-yui-say="Ooh, I love winning!" data-yui-mood="up"><span class="ico">✨</span><h3>Profit makes her glow</h3><p>A golden rim light, sparks drifting up off her, arms in the air, a hop. Big wins heal whatever the last rug did to her.</p></div>
+      <div class="card lose" data-yui-hover="…please don't lose." data-yui-say="Ow. That one hurt." data-yui-mood="down"><span class="ico">🩹</span><h3>Losses leave marks</h3><p>A bruised cheek, a split lip, a nosebleed, plasters on her arms and knees. They stack as the day gets worse and fade as you claw it back.</p></div>
+      <div class="card" data-yui-hover="I keep score for you." data-yui-say="Look at the board, not the chart~"><span class="ico">📋</span><h3>A live PnL board</h3><p>She pulls a board from behind her back with your ticker, market cap and percentage, marked to market on every tick. Ten board styles.</p></div>
+      <div class="card" data-yui-hover="Make me cute~" data-yui-say="Dress me! The Look tab~"><span class="ico">🎀</span><h3>Yours to dress</h3><p>Outfits, colours, neckline, skirt length, bust and bounce — all live, all remembered. Any VRM avatar works if you'd rather bring your own.</p></div>
+      <div class="card" data-yui-hover="Go on, pick me up." data-yui-say="Throw me! I can take it~" data-yui-mood="wow"><span class="ico">🫳</span><h3>Real physics</h3><p>Pick her up, swing her, throw her across the monitor. She flails, rights herself mid-air and lands with a squash. Everything but her body is click-through.</p></div>
+      <div class="card" data-yui-hover="I get lonely, you know." data-yui-say="Don't leave me alone too long~"><span class="ico">💊</span><h3>She gets bored</h3><p>With nothing to report she wanders, stretches, sits down and hugs a little pump.fun pill plushie until you do something.</p></div>
     </div>
   </div>
 </section>
@@ -430,9 +563,8 @@ footer .sp{margin-left:auto}
     <div class="try">
       <span class="eyebrow">She is running right now</span>
       <h2>Make her react</h2>
-      <p style="color:var(--dim);max-width:520px;margin:14px auto 0">
-        These fire the exact code a real fill fires — same poses, same voice lines, same glow and
-        the same bruises. Nothing here is a video.
+      <p style="color:var(--dim);max-width:560px;margin:14px auto 0">
+        These fire the exact code a real fill fires — same poses, same voice lines, same glow and the same bruises. Nothing on this page is a video.
       </p>
       <div class="chips">
         <button class="chip" data-react="buy">🛒 Buy</button>
@@ -443,48 +575,43 @@ footer .sp{margin-left:auto}
         <button class="chip" id="chipBoard">📋 PnL board</button>
         <button class="chip" id="chipHeal">💗 Patch her up</button>
       </div>
-      <p class="foot-note">Losses leave marks that stack. A big enough win heals them.</p>
+      <p class="foot-note">Losses leave marks that stack. A big enough win heals them. Click the empty page and she walks over; double-click and she jumps.</p>
     </div>
   </div>
 </section>
 
-<section class="pad" id="her">
+<section class="pad" id="how">
   <div class="wrap">
     <div class="sec-head">
-      <span class="eyebrow">Not a screensaver</span>
-      <h2>She feels your trades</h2>
-      <p>Paste an address and every fill reaches her within a second — on the bonding curve, as it happens. No signup, no key, nothing to connect.</p>
+      <span class="eyebrow">How it works</span>
+      <h2>A public address in, feelings out</h2>
+      <p>She never touches your wallet. A relay reads the public chain and tells her what your address did; she does the rest.</p>
     </div>
-    <div class="grid">
-      <div class="card win">
-        <span class="ico">✨</span>
-        <h3>Profit makes her glow</h3>
-        <p>A golden rim light, sparks drifting up off her, arms in the air. Big wins heal whatever the last rug did to her.</p>
-      </div>
-      <div class="card lose">
-        <span class="ico">🩹</span>
-        <h3>Losses leave marks</h3>
-        <p>Bruises, a split lip, a nosebleed, plasters on her arms. They stack as the day gets worse and fade as you claw it back.</p>
-      </div>
-      <div class="card">
-        <span class="ico">📋</span>
-        <h3>A live PnL board</h3>
-        <p>She pulls a chalkboard from behind her back with your ticker, market cap and percentage, and updates it on every trade. Ten board styles.</p>
-      </div>
-      <div class="card">
-        <span class="ico">🎀</span>
-        <h3>Yours to dress</h3>
-        <p>Outfits, colours, neckline, skirt length, bust and bounce — all live, all saved. Any VRM avatar works if you'd rather bring your own.</p>
-      </div>
-      <div class="card">
-        <span class="ico">🫳</span>
-        <h3>Real physics</h3>
-        <p>Pick her up, swing her, throw her across the monitor. She flails, rights herself mid-air and lands with a squash. Everything but her body is click-through.</p>
-      </div>
-      <div class="card">
-        <span class="ico">💊</span>
-        <h3>She gets bored</h3>
-        <p>With nothing to report she wanders the taskbar, stretches, sits down and hugs a little pump.fun pill plushie until you do something.</p>
+    <div class="flow">
+      <div class="node"><div class="k">01 · the chain</div><h4>Your fills happen</h4><p>pump.fun curves, PumpSwap, Raydium, LaunchLab, Meteora — every venue the firehose carries, every quote token.</p></div>
+      <div class="arrow">→</div>
+      <div class="node"><div class="k">02 · the relay</div><h4>Matched to your address</h4><p>Seeds your cost basis from history, dedupes by signature, converts stock- and USDC-quoted trades to SOL-equivalent, forwards price ticks for what you hold.</p></div>
+      <div class="arrow">→</div>
+      <div class="node"><div class="k">03 · Yui</div><h4>Reacts, keeps score</h4><p>Buy, profit, loss, big win, rug — each one a pose, a line, a sound. The board marks your bag to market on every tick.</p></div>
+    </div>
+    <div class="facts2">
+      <div class="fact"><b>Honest PnL</b><p>Realised against average cost, so partial exits are right. Unrealised from the token's own market cap, so stock-paired coins don't produce nonsense.</p></div>
+      <div class="fact"><b>Under a second</b><p>The relay listens to the live firehose; a fill reaches her about as fast as it reaches the chart.</p></div>
+      <div class="fact"><b>Public by design</b><p>Anyone can connect, under caps — a few sockets per address, a few wallets per session. Or run the relay yourself; it's in the download.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="pad" id="name">
+  <div class="wrap">
+    <div class="name-band" data-yui-hover="That's me~ Only yours." data-yui-say="Ehehe… only yours." data-yui-mood="up">
+      <div class="kanji">唯<small>Y U I</small></div>
+      <div>
+        <span class="eyebrow">The name</span>
+        <h2>唯 — <em>sole, only, unique</em></h2>
+        <p>It seemed like the right word. She isn't a service with a million users wearing the same face: she runs on <b>your</b> machine, watches the <b>one</b> address you hand her, learns <b>your</b> name, and keeps score of <b>your</b> day.</p>
+        <p>No account. No cloud. Nobody else's girl — dress her how you like, and the version you end up with is one nobody else has.</p>
+        <p>One trader, one companion. That's the whole idea, and it's what the name says.</p>
       </div>
     </div>
   </div>
@@ -495,29 +622,21 @@ footer .sp{margin-left:auto}
     <div class="sec-head">
       <span class="eyebrow">Right here, in your browser</span>
       <h2>Point her at your wallet</h2>
-      <p>She reads the public chain through a relay that is already running. Paste an address and she starts reacting to it on this page — no download needed to try it.</p>
+      <p>The one on this page is connected to the same relay. Paste an address and she starts reacting to it right now — no download needed to try it.</p>
     </div>
-
     <div class="wallet-box" data-w-root>
       <h3>Watch an address</h3>
       <p>The public address you actually buy from. Axiom and Photon make their own — use that one.</p>
       <div class="w-row">
         <input data-w="addr" type="text" spellcheck="false" autocomplete="off" placeholder="e.g. 7xKX…9tPq — your Solana address">
-        <button data-w="go">Watch it</button>
+        <button data-w="go" data-yui-say="Okay! Watching~">Watch it</button>
       </div>
       <div class="w-status" data-w="status"></div>
-
       <div class="safety">
         <div><b>No wallet connection</b>You never connect, never sign, never approve anything.</div>
         <div><b>No keys, no signup</b>There is nothing to create and nothing to hand over.</div>
         <div><b>Read only</b>She watches a public address. She cannot move funds.</div>
       </div>
-    </div>
-
-    <div class="note plain">
-      <span>🎭</span>
-      <div><b>She only sees the curve.</b> Trades on the pump.fun bonding curve reach her live.
-      Once a coin graduates to Raydium she goes quiet on it — that's the feed, not a bug.</div>
     </div>
   </div>
 </section>
@@ -525,81 +644,131 @@ footer .sp{margin-left:auto}
 <section class="pad" id="get">
   <div class="wrap">
     <div class="sec-head">
-      <span class="eyebrow">Free · Windows</span>
+      <span class="eyebrow">Free · two ways to keep her</span>
       <h2>Take her home</h2>
-      <p>The one on this page is the same character running the same code. On your desktop she stands over every window, stays up while you trade, and keeps her own settings.</p>
+      <p>The same character, the same code, either way you run her. On your desktop she stands over every window; in Chrome she stands on the terminal you trade from.</p>
     </div>
 
-    <div class="steps">
-      <div class="step">
-        <div>
-          <h4>Download and unzip</h4>
-          <p>Grab the zip below and unpack it anywhere — your desktop is fine. There's no installer and nothing goes in the registry.</p>
+    <div class="ways">
+      <div class="way">
+        <span class="ico">🖥️</span>
+        <span class="eyebrow">On your PC</span>
+        <h3>The desktop app</h3>
+        <p>A folder you unzip and run — no installer, nothing in the registry. She lives on your taskbar over every window, stays up while you trade, keeps her own settings, and works whatever you have open.</p>
+        <ol>
+          <li>Download the zip and unpack it anywhere.</li>
+          <li>Run <code>Yui.exe</code> — she says hi and asks your name.</li>
+          <li>Paste the address you trade from into her <b>Wallet</b> tab.</li>
+        </ol>
+        <a class="btn green" id="dlBtn" href="#" data-yui-say="Yay! See you on your desktop~" data-yui-mood="wow">Download Yui <small id="dlSize2"></small></a>
+        <p class="small">Windows · <span id="dlSize3"></span> · macOS and Linux on the roadmap</p>
+      </div>
+
+      <div class="way">
+        <span class="ico">🧩</span>
+        <span class="eyebrow">In your browser</span>
+        <h3>The Chrome extension</h3>
+        <p>Add it once and she appears on the sites you already trade on — Axiom, Photon, pump.fun — standing on the page itself, reacting to your fills as they land. One setup follows you to every tab.</p>
+        <ol>
+          <li>Add it from the Chrome Web Store.</li>
+          <li>Open your terminal — she's already there.</li>
+          <li>Paste your address in her popup once; every site uses it.</li>
+        </ol>
+        <a class="btn chrome" id="extBtn" href="#" target="_blank" rel="noopener" data-yui-say="I'll be right there on your charts~">
+          <svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#4285F4" d="M24 9h17.5a20 20 0 0 0-33-4.2L16 19A10 10 0 0 1 24 9z"/><path fill="#EA4335" d="M8.5 4.8A20 20 0 0 0 12 39.6l7.6-13.2A10 10 0 0 1 16 19z"/><path fill="#FBBC05" d="M19.6 26.4 12 39.6A20 20 0 0 0 43.3 31H27.7a10 10 0 0 1-8.1-4.6z"/><path fill="#34A853" d="M43.3 31A20 20 0 0 0 41.5 9H24a10 10 0 0 1 3.7 22z"/><circle fill="#fff" cx="24" cy="24" r="7.5"/></svg>
+          Chrome Extension</a>
+        <p class="small" id="extNote">Chrome, Brave and Edge</p>
+      </div>
+    </div>
+
+    <div class="note plain" id="mobileNote"><span>📱</span><div><b>On a phone, she is already here.</b> This page runs the same Yui in your mobile browser — pick her up, dress her, paste an address and watch her react. A dedicated mobile build is on the way; until then, keep this page open while you trade.</div></div>
+
+    <div class="note"><span>⚠️</span><div><b>Windows will warn you about the download.</b> The build isn't code-signed, so SmartScreen shows "Windows protected your PC". Click <b>More info → Run anyway</b>. Every unsigned indie app does this — and the source is right there below if you'd rather build her yourself.</div></div>
+  </div>
+</section>
+
+<section class="pad" id="source">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">Open source</span>
+      <h2>Every line of her is public</h2>
+      <p>Electron, Three.js and three-vrm. The desktop app, this website and the relay server live in one repository under the MIT licence.</p>
+    </div>
+    <div class="oss">
+      <div class="repo">
+        <a class="path" id="repoPath" href="#" target="_blank" rel="noopener"><svg viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg><span id="repoName">TradingCompanion/trading-companion</span></a>
+        <h3>Read her, fork her, build her</h3>
+        <p>The renderer that runs on this page is the app's renderer, bundled unchanged. Her tour, her physics, her wounds, her voice — it's all in <code>src/renderer.js</code>. The relay is <code>server/pet-relay.js</code>. Nothing private ships: the packager refuses to build a release that contains an address, a token or a wallet.</p>
+        <div class="row">
+          <a class="btn" id="ghStar" href="#" target="_blank" rel="noopener" data-yui-say="A star? For me? ✨" data-yui-mood="up">★ Star on GitHub</a>
+          <a class="btn ghost" id="ghIssues" href="#" target="_blank" rel="noopener" data-yui-say="Found a bug? Tell them~">Issues</a>
+          <a class="btn ghost" href="docs.html#relay" data-yui-say="Run your own relay~ I'll follow it.">Run your own relay</a>
         </div>
       </div>
-      <div class="step">
-        <div>
-          <h4>Run <code>Yui.exe</code></h4>
-          <p>She appears on your taskbar and starts wandering. Click her once to open her settings; drag her wherever you like.</p>
-        </div>
+      <div class="stack">
+        <div><span>Desktop app</span><span>Electron · Windows</span></div>
+        <div><span>Her body</span><span>Three.js · @pixiv/three-vrm</span></div>
+        <div><span>Physics, poses, wounds, board</span><span>src/renderer.js</span></div>
+        <div><span>This website</span><span>same renderer, in a tab</span></div>
+        <div><span>The relay</span><span>Node · WebSocket · Postgres</span></div>
+        <div><span>Her voice</span><span>47 real clips + a synth fallback</span></div>
+        <div><span>Licence</span><span>MIT</span></div>
       </div>
-      <div class="step">
-        <div>
-          <h4>Paste your wallet</h4>
-          <p>Open <b>Wallet</b> in her panel and paste the address you actually trade from. That's the whole setup — she's already pointed at the public relay, and she'll tell you the moment a trade reaches her.</p>
-        </div>
-      </div>
-    </div>
-
-    <div style="text-align:center;margin:32px 0">
-      <a class="btn green" id="dlBtn" href="#" style="padding:17px 34px;font-size:17px">
-        Download Yui <small id="dlSize2"></small>
-      </a>
-    </div>
-
-    <div class="note">
-      <span>⚠️</span>
-      <div><b>Windows will warn you.</b> The build isn't code-signed, so SmartScreen shows
-      "Windows protected your PC". Click <b>More info → Run anyway</b>. Every unsigned indie app does this.</div>
-    </div>
-
-    <div class="note plain">
-      <span>🔌</span>
-      <div><b>No API keys, no signup, no wallet connection.</b> She reads the public chain through
-      a relay that's already running — you never connect a wallet, never sign anything, and never
-      hand over a key. She only ever <em>watches</em> an address you type in. It's rate limited to a
-      few connections per person; if you'd rather not use it at all, the relay server is in the
-      download and you can run your own against your own feed.</div>
     </div>
   </div>
 </section>
 
-<section class="pad" id="fees">
+<section class="pad" id="road">
   <div class="wrap">
-    <div class="fees">
+    <div class="sec-head">
       <span class="eyebrow">Where the money goes</span>
       <h2>Creator fees fund Yui</h2>
-      <p>Every creator fee from $YUI goes straight back into building her — more outfits, more
-      reactions, a Chrome extension, macOS and Linux builds, and a hosted relay so nobody has to
-      run their own.</p>
+      <p>Every creator fee from $YUI goes straight back into building her.</p>
+    </div>
+    <div class="road">
+      <div><b>Chrome extension</b>Yui standing on Axiom, Photon and pump.fun itself, reacting on the page you trade from.<span class="tag now">in progress</span></div>
+      <div><b>Hosted relay, TLS</b>So nobody has to run their own feed — and the website can watch a wallet over https.<span class="tag now">in progress</span></div>
+      <div><b>More outfits &amp; reactions</b>Seasonal looks, more voice lines, more ways to lose gracefully.<span class="tag soon">next</span></div>
+      <div><b>Mobile</b>She already runs in a phone browser; a proper mobile build is next.<span class="tag soon">next</span></div>
+      <div><b>macOS &amp; Linux</b>The app is Electron; the builds are the work.<span class="tag">later</span></div>
     </div>
   </div>
 </section>
 
 <footer>
   <div class="wrap">
-    <span>YUI · trenchwaifu.fun</span>
+    <span class="fb"><img src="assets/icon.png" alt="">YUI · tradingcompanion.fun</span>
     <span class="sp"></span>
+    <a href="docs.html">Docs</a>
     <a id="ftBuy" href="#">pump.fun</a>
-    <a id="ftX" href="#">X</a>
+    <a id="ftX" href="#" target="_blank" rel="noopener">X</a>
+    <a id="ftGh" href="#" target="_blank" rel="noopener">GitHub</a>
     <a id="ftTg" href="#" hidden>Telegram</a>
     <a id="ftDl" href="#">Download</a>
+    <a id="ftExt" href="#" target="_blank" rel="noopener">Chrome Extension</a>
+    <span id="ftVer"></span>
   </div>
 </footer>
 
-<!-- ---------- Yui's own DOM: the renderer expects these four to exist ---------- -->
+<!-- ---------- the starter: the terminal and one guided trade, before anything else ---------- -->
+<div id="starter">
+  <div class="head"><span class="eyebrow">How Yui works</span><h2>She feels your trades, in real time</h2><p>A demo of the way she reads a wallet — every reaction comes from what it does on-chain, the moment it happens.</p></div>
+  <div class="frame" id="starterFrame"></div>
+  <div class="cap" id="starterCap">$Mubarak · 14 Sep 2026</div>
+  <button class="skip" id="starterSkip" hidden><span class="lines"><span class="k">No thanks</span><span class="v">Skip the lesson</span></span><span class="arrow">➜</span></button>
+  <div class="hint pop" id="starterHint" hidden><span class="eyebrow" id="starterEyebrow"></span><p id="starterText"></p><i class="arrow"></i></div>
+</div>
+
+<!-- ---------- the first visit: the page behind glass until she has said hello ---------- -->
+<div id="yui-intro">
+  <div class="load"><span class="mark">YUI</span><h3>is getting ready</h3><p id="introTxt">Downloading her… 0%</p><span class="bar"><i id="introBar"></i></span></div>
+  <div class="hint"><span class="eyebrow">Say hello</span><p>Tell her your name to get started.</p></div>
+</div>
+
+<!-- ---------- Yui's own DOM: the renderer expects these to exist ---------- -->
 <div id="loading" hidden></div>
 <div id="bubble"></div>
+<div id="tour" hidden></div>
 <div id="ring" hidden></div>
 <div id="panel" hidden></div>
 
@@ -609,109 +778,128 @@ footer .sp{margin-left:auto}
 </div>
 
 <div id="yui-dock">
-  <button id="dockSound" title="Sound on / off">🔇</button>
+  <button id="dockSound" title="Sound on / off">🔊</button>
   <button id="dockWave"  title="Say hi">👋</button>
   <button id="dockDress" title="Dress her">🎀</button>
   <button id="dockTour"  title="Show me how she works">❔</button>
 </div>
 
+<script src="yui-defaults.js"></script>
 <script src="yui-sounds.js"></script>
 <script src="yui-boot.js"></script>
 <script src="yui-web.js"></script>
-<script src="yui-guide.js"></script>
+<script src="yui-wallet.js"></script>
+<script src="yui-page.js"></script>
+<script src="yui-starter.js"></script>
 <script>
 (function(){
   var C = window.YUI_CONFIG || {};
   var haveMint = C.mint && C.mint.indexOf('REPLACE') !== 0;
   var pumpUrl  = C.pumpUrl || (haveMint ? 'https://pump.fun/coin/' + C.mint : 'https://pump.fun');
+  var $ = function (id) { return document.getElementById(id); };
 
   // ---- contract address: never show a placeholder as if it were real --------------------------
-  var caText = document.getElementById('caText'), caBox = document.getElementById('caBox');
-  var caCopy = document.getElementById('caCopy');
-  if (haveMint) { caText.textContent = C.mint; }
-  else { caBox.classList.add('pending'); caText.textContent = 'not published yet — launching on pump.fun'; caCopy.hidden = true; }
-  caCopy.addEventListener('click', function(){
+  if (haveMint) { $('caText').textContent = C.mint; }
+  else { $('caBox').classList.add('pending'); $('caText').textContent = 'not published yet — launching on pump.fun'; $('caCopy').hidden = true; }
+  $('caCopy').addEventListener('click', function(){
     navigator.clipboard.writeText(C.mint).then(function(){
-      caCopy.textContent = 'Copied'; caCopy.classList.add('done');
-      setTimeout(function(){ caCopy.textContent = 'Copy'; caCopy.classList.remove('done'); }, 1600);
+      $('caCopy').textContent = 'Copied'; $('caCopy').classList.add('done');
+      setTimeout(function(){ $('caCopy').textContent = 'Copy'; $('caCopy').classList.remove('done'); }, 1600);
     });
   });
 
   // ---- links ----------------------------------------------------------------------------------
-  ['navBuy','heroBuy','ftBuy'].forEach(function(id){ document.getElementById(id).href = pumpUrl; });
-  ['dlBtn','ftDl'].forEach(function(id){ document.getElementById(id).href = C.download; });
-  document.getElementById('heroDl').href = '#get';
+  ['navBuy','heroBuy','ftBuy'].forEach(function(id){ $(id).href = pumpUrl; });
+  ['dlBtn','ftDl'].forEach(function(id){ $(id).href = C.download; });
+  // the extension: a real link once the Web Store listing is up, and plainly "soon" until then
+  // The extension button is a normal button either way: it opens the Web Store listing once the
+  // listing exists, and until then a click simply does nothing rather than going somewhere wrong.
+  var ext = [$('extBtn'), $('heroExt'), $('ftExt')];
+  ext.forEach(function(b){
+    if (C.chrome) { b.href = C.chrome; return; }
+    b.setAttribute('href', '#');
+    b.addEventListener('click', function(e){ e.preventDefault(); });
+  });
+  if (!C.chrome) $('extNote').textContent = 'Going up on the Chrome Web Store before launch';
   var size = C.downloadSize ? '· ' + C.downloadSize : '';
-  document.getElementById('dlSize').textContent = size;
-  document.getElementById('dlSize2').textContent = size;
-  if (C.x) document.getElementById('ftX').href = C.x; else document.getElementById('ftX').hidden = true;
-  if (C.telegram) { var tg = document.getElementById('ftTg'); tg.href = C.telegram; tg.hidden = false; }
+  $('dlSize').textContent = size; $('dlSize2').textContent = size;
+  $('dlSize3').textContent = C.downloadSize || '';
+  $('ftVer').textContent = C.version ? 'v' + C.version : '';
+  if (C.x) { $('navX').href = C.x; $('ftX').href = C.x; } else { $('navX').hidden = true; $('ftX').hidden = true; }
+  if (C.github) {
+    $('navGh').href = C.github; $('ftGh').href = C.github; $('repoPath').href = C.github; $('ghStar').href = C.github; $('heroGh').href = C.github;
+    $('ghIssues').href = C.github.replace(/\/$/, '') + '/issues';
+    $('repoName').textContent = C.github.replace(/^https?:\/\/github\.com\//, '').replace(/\/$/, '');
+  } else { $('navGh').hidden = true; $('ftGh').hidden = true; $('heroGh').hidden = true; }
+  if (C.telegram) { $('navTg').href = C.telegram; $('navTg').hidden = false; $('ftTg').href = C.telegram; $('ftTg').hidden = false; }
+
+  // ---- on a phone, her reactions are the first thing you meet ---------------------------------
+  // Tapping Profit / Loss / Buy and watching her is the whole point of her; on a small screen it
+  // comes straight after the hero rather than three sections down.
+  if (window.YUI_PHONE) {
+    var tryS = $('try'), hero = $('top');
+    if (tryS && hero && hero.parentNode) hero.parentNode.insertBefore(tryS, hero.nextElementSibling);
+    var tryHead = tryS && tryS.querySelector('h2');
+    if (tryHead) tryHead.textContent = 'Tap one. Watch her.';
+  }
+
+  // ---- the demo, again ------------------------------------------------------------------------
+  // The lesson is the page's own opening act, so replaying it is simply opening the page again.
+  $('navDemo').addEventListener('click', function(){ location.assign(location.pathname + '?demo=1'); });
+
+  // ---- the header: menu on phones, the current section underlined -----------------------------
+  var menu = $('menu');
+  $('burger').addEventListener('click', function(){ menu.classList.toggle('open'); });
+  menu.addEventListener('click', function(e){ if (e.target.tagName === 'A') menu.classList.remove('open'); });
+  var navLinks = Array.prototype.slice.call(menu.querySelectorAll('[data-nav]'));
+  function markNav(){
+    var y = window.scrollY + window.innerHeight * 0.4, on = null;
+    navLinks.forEach(function(a){ var s = $(a.dataset.nav); if (s && s.offsetTop <= y) on = a; });
+    navLinks.forEach(function(a){ a.classList.toggle('on', a === on); });
+  }
+  window.addEventListener('scroll', markNav, { passive: true }); markNav();
 
   // ---- wake her up ----------------------------------------------------------------------------
-  var bar = document.getElementById('loadBar'), txt = document.getElementById('loadTxt');
-  YuiWeb.on('ready', function(){ YuiGuide.auto(); });
-  YuiWeb.start({
-    model: 'assets/yui.vrm',
-    sounds: window.YUI_SOUNDS,
-    onProgress: function(p){
-      bar.style.width = Math.round(p * 100) + '%';
-      if (p >= 1) txt.textContent = 'almost there';
-    }
-  }).catch(function(e){
-    txt.textContent = "she couldn't load — try a refresh";
-    console.error('[yui]', e);
-  });
+  // The website's Yui is the original: while the lesson is on, the girl teaching it is a separate
+  // copy inside the overlay, and this one does not exist yet. She starts as the lesson fades out.
+  var bar = $('loadBar'), txt = $('loadTxt');
+  function wakeYui(){
+    YuiWeb.start({
+      model: 'assets/yui.vrm',
+      sounds: window.YUI_SOUNDS,
+      onProgress: function(p){ bar.style.width = Math.round(p * 100) + '%'; if (p >= 1) txt.textContent = 'almost there'; if (window.YuiPage) YuiPage.progress(p); }
+    }).catch(function(e){ txt.textContent = "she couldn't load — try a refresh"; console.error('[yui]', e); });
+  }
+  if (document.documentElement.classList.contains('yui-starter')) window.addEventListener('yui-starter-done', wakeYui);
+  else wakeYui();
 
   // ---- her dock -------------------------------------------------------------------------------
-  var snd = document.getElementById('dockSound');
-  function paintSound(){
-    var muted = YuiWeb.settings.muted;
-    snd.textContent = muted ? '🔇' : '🔊';
-    snd.classList.toggle('on', !muted);
-  }
+  var snd = $('dockSound');
+  function paintSound(){ var m = YuiWeb.settings.muted; snd.textContent = m ? '🔇' : '🔊'; snd.classList.toggle('on', !m); }
   snd.addEventListener('click', function(){ YuiWeb.setMuted(!YuiWeb.settings.muted); paintSound(); });
   paintSound();
-  document.getElementById('dockWave').addEventListener('click', function(){ YuiWeb.command('wave'); });
-  document.getElementById('dockDress').addEventListener('click', function(){ YuiWeb.openPanel('look'); });
-  document.getElementById('dockTour').addEventListener('click', function(){
-    if (YuiGuide.running()) YuiGuide.stop(); else YuiGuide.start();
-  });
+  $('dockWave').addEventListener('click', function(){ YuiWeb.command('wave'); YuiWeb.say('Hi~!', 2); });
+  $('dockDress').addEventListener('click', function(){ YuiWeb.openPanel('look'); });
+  $('dockTour').addEventListener('click', function(){ if (!YuiWeb.tourRunning()) YuiWeb.tour(); });
 
   // ---- the demo chips -------------------------------------------------------------------------
-  // Her reactions are muted by default (autoplay is rude), but someone deliberately asking to see
-  // one has just made the gesture a browser needs — so the first tap turns her voice on too.
-  var soundUnlocked = false;
-  function unlockSound(){
-    if (soundUnlocked) return;
-    soundUnlocked = true;
-    if (YuiWeb.settings.muted) { YuiWeb.setMuted(false); paintSound(); }
-  }
-  document.querySelectorAll('[data-react]').forEach(function(b){
-    b.addEventListener('click', function(){
-      unlockSound();
-      YuiWeb.react(b.dataset.react);
-    });
-  });
-  // The test bag she holds up runs out after half a minute, so the chip follows her rather than
-  // staying lit on a board that is no longer there.
-  var chipBoard = document.getElementById('chipBoard');
+  document.querySelectorAll('[data-react]').forEach(function(b){ b.addEventListener('click', function(){ YuiWeb.react(b.dataset.react); }); });
+  var chipBoard = $('chipBoard');
   chipBoard.addEventListener('click', function(){ chipBoard.classList.toggle('on', YuiWeb.board()); });
-  setInterval(function(){
-    if (chipBoard.classList.contains('on') && !YuiWeb.boardOn()) chipBoard.classList.remove('on');
-  }, 1000);
-  document.getElementById('chipHeal').addEventListener('click', function(){
-    YuiWeb.heal(); YuiWeb.command('wave');
-  });
+  setInterval(function(){ if (chipBoard.classList.contains('on') && !YuiWeb.boardOn()) chipBoard.classList.remove('on'); }, 1000);
+  $('chipHeal').addEventListener('click', function(){ YuiWeb.heal(); YuiWeb.command('wave'); YuiWeb.say('All better~ Thank you!', 3); });
 
   // ---- the wallet section ---------------------------------------------------------------------
   YuiWallet.bind(document.querySelector('#wallet [data-w-root]'));
 
-  // Reserve her band at the bottom of the viewport: the hero keeps its text above her and the
-  // footer keeps its last line clear. Everything between scrolls behind her on purpose.
+  // She stands on the left. On a wide window the hero's text has the middle to itself and needs
+  // no room kept below; on a narrow one she would stand in front of it, so the hero and the footer
+  // reserve her height at the bottom. Everything between scrolls behind her on purpose.
   function band(){
     var h = YuiWeb.settings.userSized ? YuiWeb.settings.sizePx : YuiWeb.sizeForViewport();
-    document.documentElement.style.setProperty('--yui-band', Math.round(h + 44) + 'px');
-    document.documentElement.style.setProperty('--foot-pad', Math.round(h + 60) + 'px');
+    var wide = window.innerWidth >= 1200;
+    document.documentElement.style.setProperty('--yui-band', (wide ? 48 : Math.round(h + 44)) + 'px');
+    document.documentElement.style.setProperty('--foot-pad', (wide ? 60 : Math.round(h + 60)) + 'px');
   }
   band(); window.addEventListener('resize', band);
   YuiWeb.on('settings', function(p){ if ('sizePx' in p) band(); });
