@@ -18,7 +18,7 @@
 
 const STORE = 'yui.web.settings.v2';          // her settings, the key yui-boot.js uses
 const EXT = 'yui.ext';                        // the extension's own: { off: { host: true }, fps }
-// Over TLS through Caddy on the relay box; the worker falls back to the plain address until DNS resolves.
+// Over TLS through Caddy on the relay box.
 const PUBLIC_RELAY = 'wss://relay.tradingcompanion.fun';
 const HOST_TAG = 'yui-companion';             // a custom element name: no site stylesheet has a rule for it
 const DEV = typeof YUI_DEV !== 'undefined' && YUI_DEV;

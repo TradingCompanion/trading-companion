@@ -1049,9 +1049,9 @@ function renderPanel() {
     </div>
 
     <div class="pg" data-pg="look"${pg('look')}>
-      <div class="row"><div class="f">${lab('Bust', pct(c.bust ?? FIG.bust))}<input type="range" id="fBust" min="0" max="1" step="0.02" value="${c.bust ?? FIG.bust}"></div>
+      <div class="row"><div class="f">${lab('Figure', pct(c.bust ?? FIG.bust))}<input type="range" id="fBust" min="0" max="1" step="0.02" value="${c.bust ?? FIG.bust}"></div>
         <div class="f">${lab('Bounce', pct(c.jiggle ?? FIG.jiggle))}<input type="range" id="fJiggle" min="0" max="1" step="0.02" value="${c.jiggle ?? FIG.jiggle}"></div></div>
-      <div class="row"><div class="f">${lab('Cleavage', pct(c.cleavage ?? FIG.cleavage))}<input type="range" id="fCleavage" min="0" max="1" step="0.05" value="${c.cleavage ?? FIG.cleavage}"></div>
+      <div class="row"><div class="f">${lab('Neckline', pct(c.cleavage ?? FIG.cleavage))}<input type="range" id="fCleavage" min="0" max="1" step="0.05" value="${c.cleavage ?? FIG.cleavage}"></div>
         <div class="f">${lab('Skirt length', pct(c.skirtLen ?? FIG.skirtLen))}<input type="range" id="fSkirtLen" min="0.3" max="1" step="0.02" value="${c.skirtLen ?? FIG.skirtLen}"></div></div>
       <div class="row"><div class="f">${lab('Hips', signed(c.hips ?? FIG.hips))}<input type="range" id="fHips" min="0" max="1" step="0.02" value="${c.hips ?? FIG.hips}"></div>
         <div class="f">${lab('Waist', signed(c.waist ?? FIG.waist))}<input type="range" id="fWaist" min="0" max="1" step="0.02" value="${c.waist ?? FIG.waist}"></div></div>

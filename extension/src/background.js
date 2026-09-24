@@ -11,27 +11,12 @@
 // and the tabs' port pings both count as activity, so the sockets stay up while any tab is open.
 'use strict';
 
-// The public relay's name (TLS via Caddy on the relay box). Until the A record points there the
-// worker falls back to the plain address the desktop app also carries.
-const PUBLIC_RELAY_HOST = 'relay.tradingcompanion.fun';
-const PUBLIC_RELAY_FALLBACK = 'ws://192.248.179.126:9998';
-
 const shared = new Map();   // relay URL -> { url, ws, ports:Set<Port>, open, hello, errored }
-
-function fallbackFor(url) {
-  try {
-    const u = new URL(url);
-    if (u.hostname !== PUBLIC_RELAY_HOST) return null;
-    const f = new URL(PUBLIC_RELAY_FALLBACK);
-    u.protocol = f.protocol; u.host = f.host;
-    return u.toString();
-  } catch { return null; }
-}
 
 function post(port, m) { try { port.postMessage(m); } catch { /* the tab went away */ } }
 function broadcast(e, m) { for (const p of e.ports) post(p, m); }
 
-function connect(e, url, isFallback) {
+function connect(e, url) {
   let ws;
   try { ws = new WebSocket(url); } catch (err) {
     broadcast(e, { type: 'error' });
@@ -52,9 +37,6 @@ function connect(e, url, isFallback) {
   ws.onerror = () => { e.errored = true; };
   ws.onclose = (ev) => {
     if (e.ws !== ws) return;
-    // Name did not resolve (or refused) before ever opening: try the address the app would use.
-    const fb = !e.open && !isFallback && fallbackFor(url);
-    if (fb) { connect(e, fb, true); return; }
     if (e.errored && !e.open) broadcast(e, { type: 'error' });
     broadcast(e, { type: 'close', code: ev.code, reason: ev.reason || '' });
     shared.delete(e.url); e.ports.clear(); e.ws = null;
@@ -66,7 +48,7 @@ function join(url, port) {
   if (!e) {
     e = { url, ws: null, ports: new Set(), open: false, hello: null, errored: false };
     shared.set(url, e);
-    connect(e, url, false);
+    connect(e, url);
   }
   e.ports.add(port);
   if (e.open) {
