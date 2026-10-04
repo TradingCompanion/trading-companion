@@ -19,7 +19,16 @@ const TYPES = {
   '.zip': 'application/zip', '.ico': 'image/x-icon', '.woff2': 'font/woff2',
 };
 
+// Her chat (Claude + her ElevenLabs voice) answers under /api/yui/. The static site must come up
+// with or without it, so a missing dependency only switches the chat off.
+let yuiChat = null;
+try { yuiChat = require('../server/yui-chat.js'); } catch (e) { console.error('chat disabled: ' + e.message); }
+
 const server = http.createServer((req, res) => {
+  if (req.url.startsWith('/api/yui/')) {
+    if (yuiChat) yuiChat.handle(req, res); else res.writeHead(503, { 'Content-Type': 'text/plain' }).end('chat is off');
+    return;
+  }
   const url = decodeURIComponent(req.url.split('?')[0]);
   let file = path.join(ROOT, url === '/' ? INDEX : url);
   if (!file.startsWith(ROOT)) { res.writeHead(403).end(); return; }

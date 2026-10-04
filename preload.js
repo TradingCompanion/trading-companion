@@ -22,4 +22,13 @@ contextBridge.exposeInMainWorld('pet', {
   setDisplay: (id) => ipcRenderer.send('set-display', id),
   openSoundsFolder: () => ipcRenderer.send('open-sounds-folder'),
   rescanSounds: () => ipcRenderer.send('rescan-sounds'),
+  // talking to her: the keys live in the main process and never come back to the page
+  chat: {
+    status: () => ipcRenderer.invoke('chat-status'),
+    setKeys: (k) => ipcRenderer.invoke('chat-set-keys', k),
+    send: (id, body) => ipcRenderer.send('chat-send', id, body),
+    abort: (id) => ipcRenderer.send('chat-abort', id),
+    onEvent: (cb) => ipcRenderer.on('chat-event', (_e, m) => cb(m)),
+    stt: (buf, mime) => ipcRenderer.invoke('chat-stt', buf, mime),
+  },
 });

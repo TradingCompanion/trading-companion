@@ -1461,6 +1461,7 @@ window.addEventListener('mousedown', (e) => {
   const et = evTarget(e);
   if (panelOpen && et instanceof Node && panelEl.contains(et)) return; // let the panel handle its own clicks
   if (tourActive && et instanceof Node && tourEl.contains(et)) return;
+  if (et instanceof Element && et.closest('.yui-ui')) return;   // the chat bar and its key card take their own clicks
   updateCursor(e.clientX, e.clientY);
   if (!model) return;
   const sb = signHitTest().badge;
@@ -4255,6 +4256,7 @@ function step(dt) {
 }
 
 let lastIgnore = null;
+const extraUi = document.getElementsByClassName('yui-ui');   // live: whatever carries the class right now
 function draw() {
   renderer.render(scene, camera);
   drawFx();
@@ -4270,6 +4272,8 @@ function draw() {
   let overPanel = false;
   if (panelOpen && cursor.seen) { const r = panelEl.getBoundingClientRect(); overPanel = cursor.sx >= r.left - 8 && cursor.sx <= r.right + 8 && cursor.sy >= r.top - 8 && cursor.sy <= r.bottom + 8; }
   if (!overPanel && tourActive && cursor.seen) { const r = tourEl.getBoundingClientRect(); overPanel = cursor.sx >= r.left - 8 && cursor.sx <= r.right + 8 && cursor.sy >= r.top - 8 && cursor.sy <= r.bottom + 8; }
+  // anything else of hers on screen (the chat bar, its key card) catches the mouse the same way
+  if (!overPanel && cursor.seen) for (const el of extraUi) { const r = el.getBoundingClientRect(); if (r.width && cursor.sx >= r.left - 6 && cursor.sx <= r.right + 6 && cursor.sy >= r.top - 6 && cursor.sy <= r.bottom + 6) { overPanel = true; break; } }
   // only the close badge catches the mouse: clicks anywhere else on the board still reach the chart
   const wantIgnore = !hit && !overPanel && !sh.badge;
   if (wantIgnore !== lastIgnore) { bridge.setIgnore(wantIgnore); lastIgnore = wantIgnore; }
@@ -4593,6 +4597,17 @@ window.__petPaintMs = () => ({ ...paintMs });
 window.__petWoundSheets = () => { const o = {}; for (const k of ['face', 'skin']) for (const f of (model && model.figure && model.figure[k] ? model.figure[k].list : [])) if (f.woundCanvas) o[k] = f.woundCanvas.toDataURL('image/png'); return o; };
 window.__petWounds = () => pet.wounds.map((w) => ({ type: w.def.type, anchor: w.anchor === undefined ? 'pending' : w.anchor && { u: +w.anchor.u.toFixed(3), v: +w.anchor.v.toFixed(3), dr: w.anchor.dr.map((x) => +x.toFixed(2)), dd: w.anchor.dd.map((x) => +x.toFixed(2)) } }));
 window.__petSay = say;
+// A live spoken line (the website's chat): an audio element at her volume and pitch whose sound
+// moves her mouth, exactly as her clips do. The caller plays it.
+window.__petSpeak = (url) => {
+  const a = new Audio(url);
+  a.volume = cfg?.muted || quiet('Sounds') ? 0 : clamp(cfg?.volume ?? 0.6, 0, 1);
+  a.playbackRate = clamp(cfg?.pitch ?? 1, 0.5, 2);
+  try { a.preservesPitch = false; a.mozPreservesPitch = false; } catch {}
+  try { ensureAudio(); } catch {}
+  lipAttach(a);
+  return a;
+};
 window.__petSetCfg = (p) => saveCfg(p);
 window.__petSleepNow = () => { pet.lastInteraction = T - SLEEP_AFTER - 30; lastTradeAt = T - SLEEP_AFTER - 30; if (pet.state !== 'sleep') setState('idle'); pet.micro = null; pet.nextActionAt = T + 999; };
 window.__petSignList = (on) => { signListMode = on === undefined ? !signListMode : !!on; if (sign) sign.text = ''; };

@@ -2,7 +2,7 @@
 // Creates a transparent, frameless, always-on-top, click-through window that
 // covers the primary display's work area. The renderer decides (per frame)
 // whether the cursor is over the character and toggles mouse pass-through.
-const { app, BrowserWindow, ipcMain, screen, Menu, Tray, dialog, nativeImage, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, Menu, Tray, dialog, nativeImage, shell, safeStorage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
@@ -263,6 +263,8 @@ function buildMenu() {
   });
   return Menu.buildFromTemplate([
     { label: 'Settings…', click: () => win && win.webContents.send('command', 'settings') },
+    { label: 'Talk to Yui', click: () => win && win.webContents.send('command', 'talk') },
+    { label: 'API keys…', click: () => win && win.webContents.send('command', 'keys') },
     { type: 'separator' },
     { label: 'Wave', click: () => win && win.webContents.send('command', 'wave') },
     { label: 'Sit down', click: () => win && win.webContents.send('command', 'sit') },
@@ -324,7 +326,7 @@ ipcMain.on('open-sounds-folder', () => {
 });
 ipcMain.on('rescan-sounds', () => sendSettings());
 // a coin, in the browser. Only http(s) — this is the one place the renderer can ask the OS to open something.
-ipcMain.on('open-external', (_e, url) => { if (typeof url === 'string' && /^https:\/\/(axiom\.trade|pump\.fun|dexscreener\.com)\//.test(url)) shell.openExternal(url); });
+ipcMain.on('open-external', (_e, url) => { if (typeof url === 'string' && /^https:\/\/(axiom\.trade|pump\.fun|dexscreener\.com|console\.anthropic\.com|elevenlabs\.io)\//.test(url)) shell.openExternal(url); });
 ipcMain.on('set-display', (_e, id) => {
   if (!screen.getAllDisplays().some((d) => d.id === id)) return;
   settings.display = id; saveSettings(); placeOnDisplay(); sendSettings();
@@ -340,6 +342,8 @@ ipcMain.on('model-failed', () => {
 ipcMain.on('log', (_e, m) => console.log('[pet]', m));
 ipcMain.on('request-model', () => sendModel(settings.model || DEFAULT_MODEL));
 ipcMain.on('quit', () => app.quit());
+// talking to her (Claude + ElevenLabs with the user's own keys): src/desktop-chat.js, bundled
+require('./dist/chat.js').init({ app, ipcMain, safeStorage, send: (m) => { if (win) win.webContents.send('chat-event', m); } });
 // back to how she came: every setting, the name, the wallet; the bundled model; the tour again
 ipcMain.on('reset-settings', () => {
   settings = defaultSettings();

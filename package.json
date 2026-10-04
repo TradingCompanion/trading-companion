@@ -4,7 +4,7 @@
   "description": "Yui — an anime VRM desktop pet that reacts to your pump.fun trades",
   "main": "main.js",
   "scripts": {
-    "build": "esbuild src/renderer.js --bundle --format=iife --outfile=dist/renderer.js --minify-syntax --target=chrome130",
+    "build": "node scripts/build-desktop.js",
     "watch": "esbuild src/renderer.js --bundle --format=iife --outfile=dist/renderer.js --watch",
     "start": "npm run build && electron .",
     "test:win": "npm run build && set PET_TEST=1&& electron .",
@@ -56,12 +56,14 @@
   },
   "license": "MIT",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.131.0",
     "@pixiv/three-vrm": "^3.1.0",
     "three": "^0.169.0"
   },
   "devDependencies": {
     "electron": "^33.0.0",
     "electron-builder": "^25.1.8",
-    "esbuild": "^0.24.2"
+    "esbuild": "^0.24.2",
+    "resedit-cli": "^3.1.1"
   }
 }

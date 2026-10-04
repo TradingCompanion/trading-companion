@@ -59,8 +59,11 @@ function findRcedit() {
 
 function build() {
   const stage = path.join(ROOT, 'release', PRODUCT + '-win-x64');
-  const dist = path.join(ROOT, 'node_modules', 'electron', 'dist');
-  if (!fs.existsSync(dist)) throw new Error('node_modules/electron/dist is missing; run npm install');
+  // The Windows runtime. On Windows that is what npm installed; anywhere else it is the official
+  // win32-x64 Electron zip of the same version, unpacked into release/electron-win32-x64.
+  const winDist = process.env.ELECTRON_WIN_DIST || path.join(ROOT, 'release', 'electron-win32-x64');
+  const dist = fs.existsSync(path.join(winDist, 'electron.exe')) ? winDist : path.join(ROOT, 'node_modules', 'electron', 'dist');
+  if (!fs.existsSync(path.join(dist, 'electron.exe'))) throw new Error('no Windows Electron runtime: unpack electron-v' + require(path.join(ROOT, 'node_modules', 'electron', 'package.json')).version + '-win32-x64.zip into release/electron-win32-x64');
 
   fs.rmSync(stage, { recursive: true, force: true });
   copyDir(dist, stage);
@@ -102,8 +105,20 @@ function build() {
     } catch (e) {
       console.warn('[build-app] rcedit failed (' + String(e.message).split('\n')[0] + '); the exe keeps the Electron icon');
     }
+  } else if (fs.existsSync(ico)) {
+    // rcedit is a Windows program. Off Windows the same stamp is done in plain JS by resedit.
+    try {
+      const exe = path.join(stage, PRODUCT + '.exe'), v = pkg.version + '.0';
+      execFileSync(process.execPath, [path.join(ROOT, 'node_modules', 'resedit-cli', 'dist', 'cli.js'), '--in', exe, '--out', exe + '.new', '--icon', '1,' + ico,
+        '--product-name', PRODUCT, '--file-description', PRODUCT, '--company-name', 'tradingcompanion.fun',
+        '--product-version', v, '--file-version', v], { stdio: 'pipe' });
+      fs.renameSync(exe + '.new', exe);
+      console.log('[build-app] exe icon and version strings set (resedit)');
+    } catch (e) {
+      console.warn('[build-app] resedit failed (' + String(e.message).split('\n')[0] + '); the exe keeps the Electron icon');
+    }
   } else {
-    console.warn('[build-app] no rcedit available; the exe keeps the Electron icon');
+    console.warn('[build-app] no icon file; the exe keeps the Electron icon');
   }
 
   console.log('[build-app] ' + path.relative(ROOT, stage) + ' ready (' + copied + ' entries from build.files)');

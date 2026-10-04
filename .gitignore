@@ -43,3 +43,6 @@ relay-token.txt
 backups/
 /clips
 tools/voice-pack/cache/
+
+# the website chat: Claude key, server only
+.anthropic.key

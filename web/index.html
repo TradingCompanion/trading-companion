@@ -43,9 +43,9 @@ window.YUI_CONFIG = {
   mint:        'REPLACE_WITH_YOUR_PUMP_FUN_MINT',
   pumpUrl:     '',                                  // blank -> built from the mint automatically
   download:    'downloads/Yui-0.1.0-win-x64.zip',   // the release zip (or a full URL)
-  downloadSize:'128 MB',
+  downloadSize:'138 MB',
   version:     '0.1.0',
-  chrome:      '',                                  // the Chrome Web Store listing, once it is up
+  brain:       'Claude Opus 5.5',                  // the model she thinks with; shown in the "AI agent" section
   x:           'https://x.com/trenchwaifu',
   github:      'https://github.com/TradingCompanion/trading-companion',
   telegram:    '',                                  // blank hides the button
@@ -116,6 +116,16 @@ h2{font-size:clamp(30px,4.2vw,46px);font-weight:700;line-height:1.08}
 .sec-head{text-align:center;max-width:680px;margin:0 auto 40px}
 .sec-head p{color:var(--dim);font-size:17px;margin:14px 0 0}
 .pad{padding:96px 0}
+/* the "AI agent" band: the biggest words on the page after her name */
+.agent{text-align:center}
+.agent h2{font:800 clamp(44px,8.4vw,116px)/.96 var(--display);letter-spacing:-.02em;margin:18px 0 0;text-transform:uppercase}
+.agent .by{font:700 clamp(22px,3.6vw,46px)/1.1 var(--display);margin:18px 0 0;color:var(--txt)}
+.agent .lead{max-width:760px;margin:26px auto 0;color:var(--dim);font-size:clamp(17px,1.6vw,20px);line-height:1.6}
+.agent .lead b{color:var(--txt)}
+.agent-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px;margin-top:44px;text-align:left}
+.agent-grid div{padding:22px 22px 24px;border-radius:20px;border:1px solid var(--line2);background:rgba(255,255,255,.04)}
+.agent-grid b{display:block;font:700 18px/1.2 var(--display);margin-bottom:8px;color:var(--txt)}
+.agent-grid span{color:var(--dim);font-size:15px;line-height:1.55}
 .grad{background:linear-gradient(90deg,var(--pink2),var(--violet2) 55%,var(--teal));-webkit-background-clip:text;background-clip:text;color:transparent}
 
 /* ============================== header ============================== */
@@ -158,9 +168,8 @@ h2{font-size:clamp(30px,4.2vw,46px);font-weight:700;line-height:1.08}
 .btn.green{background:linear-gradient(135deg,var(--green),#57c9d5);color:#04231a;border-color:transparent;box-shadow:0 10px 34px rgba(63,224,165,.22)}
 .btn.green:hover{box-shadow:0 16px 46px rgba(63,224,165,.36)}
 .btn.ghost{background:transparent}
-.btn.chrome,.btn.gh{background:rgba(255,255,255,.06);border-color:var(--line2)}
+.btn.gh{background:rgba(255,255,255,.06);border-color:var(--line2)}
 .btn.gh svg{width:18px;height:18px;fill:currentColor}
-.btn.chrome svg{width:19px;height:19px}
 .btn small{font-weight:500;opacity:.72}
 .btn svg{width:16px;height:16px;fill:currentColor}
 
@@ -504,28 +513,25 @@ html.yui-failed #yui-load{opacity:1;pointer-events:auto;border-color:rgba(255,92
 <section class="hero" id="top">
   <div class="wrap">
     <div class="copy">
-      <span class="tagchip"><span class="pulse"></span>Live on pump.fun · open source</span>
+      <span class="tagchip"><span class="pulse"></span>AI agent · powered by <span class="brainName">Claude Opus 5.5</span></span>
       <h1>YUI</h1>
       <p class="sub">Your <span class="grad">Trading Companion</span></p>
       <p class="jp-big">トレンチワイフ</p>
       <p class="lede">
-        A 3D anime girl who lives on your taskbar — or on the terminal you trade from — watching your wallet and feeling every trade with you.
+        A 3D anime girl who lives on your taskbar — and right here on this page — watching your wallet and feeling every trade with you.
         She holds up your live PnL on a little board, <b>glows gold when you win</b> and turns up
         <b>bruised and bloody when you don't</b>. Pick her up. Throw her. Dress her. She's yours.
       </p>
       <div class="cta">
         <a class="btn primary" id="heroBuy" href="#" data-yui-say="Buy my coin? Ehehe~" data-yui-mood="up">Buy $YUI on pump.fun</a>
         <a class="btn green" id="heroDl" href="#get" data-yui-say="Take me home~!" data-yui-mood="wow">Download for Windows <small id="dlSize"></small></a>
-        <a class="btn chrome" id="heroExt" href="#get" data-yui-say="Or keep me in your browser~">
-          <svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#4285F4" d="M24 9h17.5a20 20 0 0 0-33-4.2L16 19A10 10 0 0 1 24 9z"/><path fill="#EA4335" d="M8.5 4.8A20 20 0 0 0 12 39.6l7.6-13.2A10 10 0 0 1 16 19z"/><path fill="#FBBC05" d="M19.6 26.4 12 39.6A20 20 0 0 0 43.3 31H27.7a10 10 0 0 1-8.1-4.6z"/><path fill="#34A853" d="M43.3 31A20 20 0 0 0 41.5 9H24a10 10 0 0 1 3.7 22z"/><circle fill="#fff" cx="24" cy="24" r="7.5"/></svg>
-          Chrome Extension</a>
         <a class="btn gh" id="heroGh" href="#" target="_blank" rel="noopener" data-yui-say="I'm open source~ Go star me!" data-yui-mood="up">
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
           GitHub</a>
         <a class="btn ghost" href="docs.html" data-yui-say="Read all about me~">Read the docs</a>
       </div>
       <div class="facts">
-        <span>Free</span><span>Desktop · Chrome · mobile</span><span>MIT open source</span><span>No wallet connection</span><span>Any VRM avatar</span>
+        <span>Free</span><span>Desktop · web · mobile</span><span>MIT open source</span><span>No wallet connection</span><span>Any VRM avatar</span>
       </div>
       <div class="ca">
         <div class="ca-label">Contract address</div>
@@ -542,6 +548,25 @@ html.yui-failed #yui-load{opacity:1;pointer-events:auto;border-color:rgba(255,92
   <span><i>✦</i>Glows on profit</span><span><i>✦</i>Bruises on loss</span><span><i>✦</i>Live PnL board</span><span><i>✦</i>Real physics</span><span><i>✦</i>Reads a public address only</span><span><i>✦</i>Any VRM avatar</span><span><i>✦</i>Open source</span>
   <span><i>✦</i>Glows on profit</span><span><i>✦</i>Bruises on loss</span><span><i>✦</i>Live PnL board</span><span><i>✦</i>Real physics</span><span><i>✦</i>Reads a public address only</span><span><i>✦</i>Any VRM avatar</span><span><i>✦</i>Open source</span>
 </div></div>
+
+<section class="pad agent" id="agent" data-yui-say="That's me~ I think for myself!">
+  <div class="wrap">
+    <span class="eyebrow">What she is</span>
+    <h2>Yui is an <span class="grad">AI agent</span></h2>
+    <p class="by">Powered by <span class="grad brainName">Claude Opus 5.5</span></p>
+    <p class="lead">
+      Yui is not a script with canned lines. She is an <b>AI agent with a body</b>: a mind that thinks, a voice that speaks, and a
+      3D girl who lives on your screen. She watches your wallet, feels every trade with you, and when you talk to her
+      <b>she understands you and answers out loud</b>, in her own words, in real time.
+    </p>
+    <div class="agent-grid">
+      <div><b>She thinks</b><span>Every answer is written on the spot by <span class="brainName">Claude Opus 5.5</span>, one of the most capable AI models there is. Nothing she says to you is pre-recorded.</span></div>
+      <div><b>She speaks</b><span>Her voice is generated live as she answers, with real emotion: she giggles, gasps, whispers and sighs, and her lips move with every word.</span></div>
+      <div><b>She listens</b><span>Type to her, or switch on your mic and just talk. She hears you, thinks, and talks back like a person in the room.</span></div>
+      <div><b>She watches your trades</b><span>Point her at your public address and she sees every buy and sell, holds up your live PnL, glows when you win and gets bruised when you lose.</span></div>
+    </div>
+  </div>
+</section>
 
 <section class="pad" id="her">
   <div class="wrap">
@@ -649,7 +674,7 @@ html.yui-failed #yui-load{opacity:1;pointer-events:auto;border-color:rgba(255,92
     <div class="sec-head">
       <span class="eyebrow">Free · two ways to keep her</span>
       <h2>Take her home</h2>
-      <p>The same character, the same code, either way you run her. On your desktop she stands over every window; in Chrome she stands on the terminal you trade from.</p>
+      <p>The same character, the same code, either way you run her. On your desktop she stands over every window; on this page she talks back when you speak to her.</p>
     </div>
 
     <div class="ways">
@@ -668,19 +693,17 @@ html.yui-failed #yui-load{opacity:1;pointer-events:auto;border-color:rgba(255,92
       </div>
 
       <div class="way">
-        <span class="ico">🧩</span>
-        <span class="eyebrow">In your browser</span>
-        <h3>The Chrome extension</h3>
-        <p>Add it once and she appears on the sites you already trade on — Axiom, Photon, pump.fun — standing on the page itself, reacting to your fills as they land. One setup follows you to every tab.</p>
+        <span class="ico">💬</span>
+        <span class="eyebrow">Right here</span>
+        <h3>Talk to her</h3>
+        <p>She lives on this page and she answers. Type to her or switch on your mic and just speak — she hears you, thinks, and talks back in her own voice, out loud, in real time.</p>
         <ol>
-          <li>Add it from the Chrome Web Store.</li>
-          <li>Open your terminal — she's already there.</li>
-          <li>Paste your address in her popup once; every site uses it.</li>
+          <li>Type in the bar at the bottom of the page — or press the mic.</li>
+          <li>She answers out loud, lips moving, bubble over her head.</li>
+          <li>Paste your address in her <b>Wallet</b> tab and she talks about your day.</li>
         </ol>
-        <a class="btn chrome" id="extBtn" href="#" target="_blank" rel="noopener" data-yui-say="I'll be right there on your charts~">
-          <svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#4285F4" d="M24 9h17.5a20 20 0 0 0-33-4.2L16 19A10 10 0 0 1 24 9z"/><path fill="#EA4335" d="M8.5 4.8A20 20 0 0 0 12 39.6l7.6-13.2A10 10 0 0 1 16 19z"/><path fill="#FBBC05" d="M19.6 26.4 12 39.6A20 20 0 0 0 43.3 31H27.7a10 10 0 0 1-8.1-4.6z"/><path fill="#34A853" d="M43.3 31A20 20 0 0 0 41.5 9H24a10 10 0 0 1 3.7 22z"/><circle fill="#fff" cx="24" cy="24" r="7.5"/></svg>
-          Chrome Extension</a>
-        <p class="small" id="extNote">Chrome, Brave and Edge</p>
+        <a class="btn primary" id="talkBtn" href="#" data-yui-x>Say hi to Yui</a>
+        <p class="small">Any modern browser · mic is optional</p>
       </div>
     </div>
 
@@ -729,8 +752,8 @@ html.yui-failed #yui-load{opacity:1;pointer-events:auto;border-color:rgba(255,92
       <p>Every creator fee from $YUI goes straight back into building her.</p>
     </div>
     <div class="road">
-      <div><b>Chrome extension</b>Yui standing on Axiom, Photon and pump.fun itself, reacting on the page you trade from.<span class="tag now">in progress</span></div>
-      <div><b>Hosted relay, TLS</b>So nobody has to run their own feed — and the website can watch a wallet over https.<span class="tag now">in progress</span></div>
+      <div><b>She talks back</b>Type or speak to her on this page and she answers out loud, in her own voice.<span class="tag now">live</span></div>
+      <div><b>Hosted relay, TLS</b>So nobody has to run their own feed — and the website can watch a wallet over https.<span class="tag now">live</span></div>
       <div><b>More outfits &amp; reactions</b>Seasonal looks, more voice lines, more ways to lose gracefully.<span class="tag soon">next</span></div>
       <div><b>Mobile</b>She already runs in a phone browser; a proper mobile build is next.<span class="tag soon">next</span></div>
       <div><b>macOS &amp; Linux</b>The app is Electron; the builds are the work.<span class="tag">later</span></div>
@@ -748,7 +771,6 @@ html.yui-failed #yui-load{opacity:1;pointer-events:auto;border-color:rgba(255,92
     <a id="ftGh" href="#" target="_blank" rel="noopener">GitHub</a>
     <a id="ftTg" href="#" hidden>Telegram</a>
     <a id="ftDl" href="#">Download</a>
-    <a id="ftExt" href="#" target="_blank" rel="noopener">Chrome Extension</a>
     <span id="ftVer"></span>
   </div>
 </footer>
@@ -793,6 +815,7 @@ html.yui-failed #yui-load{opacity:1;pointer-events:auto;border-color:rgba(255,92
 <script src="yui-web.js"></script>
 <script src="yui-wallet.js"></script>
 <script src="yui-page.js"></script>
+<script src="yui-chat.js"></script>
 <script src="yui-starter.js"></script>
 <script>
 (function(){
@@ -814,16 +837,8 @@ html.yui-failed #yui-load{opacity:1;pointer-events:auto;border-color:rgba(255,92
   // ---- links ----------------------------------------------------------------------------------
   ['navBuy','heroBuy','ftBuy'].forEach(function(id){ $(id).href = pumpUrl; });
   ['dlBtn','ftDl'].forEach(function(id){ $(id).href = C.download; });
-  // the extension: a real link once the Web Store listing is up, and plainly "soon" until then
-  // The extension button is a normal button either way: it opens the Web Store listing once the
-  // listing exists, and until then a click simply does nothing rather than going somewhere wrong.
-  var ext = [$('extBtn'), $('heroExt'), $('ftExt')];
-  ext.forEach(function(b){
-    if (C.chrome) { b.href = C.chrome; return; }
-    b.setAttribute('href', '#');
-    b.addEventListener('click', function(e){ e.preventDefault(); });
-  });
-  if (!C.chrome) $('extNote').textContent = 'Going up on the Chrome Web Store before launch';
+  if (C.brain) document.querySelectorAll('.brainName').forEach(function(n){ n.textContent = C.brain; });
+  $('talkBtn').addEventListener('click', function(e){ e.preventDefault(); if (window.YuiChat) window.YuiChat.focus(); });
   var size = C.downloadSize ? '· ' + C.downloadSize : '';
   $('dlSize').textContent = size; $('dlSize2').textContent = size;
   $('dlSize3').textContent = C.downloadSize || '';

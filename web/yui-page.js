@@ -141,7 +141,7 @@
   function herOwn(el, e) {
     if (!el || !el.closest) return false;
     if (el.tagName === 'CANVAS') return !e || !window.__petHitAt || !!window.__petHitAt(e.clientX, e.clientY);
-    return !!el.closest('#panel, #tour, #bubble, #yui-dock');
+    return !!el.closest('#panel, #tour, #bubble, #yui-dock, #yui-chat');
   }
   var lastClick = { t: 0, x: 0, y: 0 };
   document.addEventListener('click', function (e) {

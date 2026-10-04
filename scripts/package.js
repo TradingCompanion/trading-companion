@@ -96,12 +96,7 @@ console.log(fs.existsSync(path.join(ROOT, 'relay.local.json'))
 const WIN = process.platform === 'win32';
 
 console.log('[package] bundling the renderer...');
-// the esbuild shim is plain JS: run it with node, rather than npm.cmd through a shell
-execFileSync(process.execPath,
-  [path.join(ROOT, 'node_modules', 'esbuild', 'bin', 'esbuild'),
-    'src/renderer.js', '--bundle', '--format=iife', '--outfile=dist/renderer.js',
-    '--minify-syntax', '--target=chrome130'],
-  { cwd: ROOT, stdio: 'inherit' });
+require('./build-desktop').build();
 
 console.log('[package] building the app folder...');
 const { stage: unpacked, appDir } = require('./build-app').build();
@@ -135,9 +130,10 @@ const { stage: unpacked, appDir } = require('./build-app').build();
 
 const zip = path.join(ROOT, 'release', 'Yui-' + pkg.version + '-win-x64.zip');
 try { fs.unlinkSync(zip); } catch {}
-const sevenZip = path.join(ROOT, 'node_modules', '7zip-bin', 'win', 'x64', '7za.exe');
+// on Windows the bundled 7-Zip; elsewhere (the release is also cut on the Linux box) the system's
+const sevenZip = WIN ? path.join(ROOT, 'node_modules', '7zip-bin', 'win', 'x64', '7za.exe') : '/usr/bin/7za';
 console.log('[package] zipping...');
-if (WIN && fs.existsSync(sevenZip)) {
+if (fs.existsSync(sevenZip)) {
   execFileSync(sevenZip, ['a', '-tzip', '-mx=7', zip, path.join(unpacked, '*')], { cwd: ROOT, stdio: 'inherit' });
 } else {
   execFileSync('powershell', ['-NoProfile', '-Command',

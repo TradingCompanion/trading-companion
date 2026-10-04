@@ -152,7 +152,7 @@ html.yui-ready #yui-stage{opacity:1}
     <div class="kv">
       <div><b>On the desktop</b>An Electron app. Transparent, always on top, click-through everywhere except her body. She stands on the taskbar of every window.</div>
       <div><b>On this website</b>The same renderer, bundled unchanged, running in a tab. Same physics, same tour, same panel, same reactions.</div>
-      <div><b>In your browser</b>A Chrome extension — going up on the Chrome Web Store before launch — that stands her on Axiom, Photon and pump.fun itself, reacting on the page you trade from. One setup follows you to every site.</div>
+      <div><b>She talks back</b>On the website you can type to her or speak into your mic. She answers out loud in her own voice, in real time, with her lips moving and the words in her bubble.</div>
       <div><b>On your phone</b>The website runs the same renderer in a mobile browser — pick her up with a finger, dress her, point her at an address. A dedicated mobile build is on the roadmap.</div>
       <div><b>The relay</b>A small server on the same box as a pump.fun firehose. It matches fills to your address and tells her. You can run it yourself.</div>
     </div>
@@ -305,16 +305,17 @@ node test-relay.js                    # 18 checks against a fake firehose, no da
   </section>
 
   <section class="doc" id="versions">
-    <h2>Desktop, website, extension</h2>
+    <h2>Desktop and website</h2>
     <div class="tblwrap"><table>
-      <tr><th></th><th>Desktop</th><th>Website</th><th>Extension</th></tr>
-      <tr><td>Where she stands</td><td>your taskbar, over every window</td><td>the bottom of the page</td><td>the trading site's page</td></tr>
-      <tr><td>Click-through</td><td>everywhere except her body</td><td>the page behind her stays usable</td><td>the site keeps every event that isn't on her</td></tr>
-      <tr><td>Settings</td><td>settings.json</td><td>localStorage, per browser</td><td>chrome.storage, follows you to every site</td></tr>
-      <tr><td>Relay</td><td>ws://</td><td>wss:// via the proxy</td><td>one shared socket per relay, from the worker</td></tr>
-      <tr><td>Sound</td><td>always</td><td>after your first click</td><td>after your first click</td></tr>
-      <tr><td>Multi-monitor</td><td>pick a screen</td><td>—</td><td>—</td></tr>
-      <tr><td>Phone</td><td>—</td><td>yes — drag her with a finger; the chart lesson is desktop-only</td><td>—</td></tr>
+      <tr><th></th><th>Desktop</th><th>Website</th></tr>
+      <tr><td>Where she stands</td><td>your taskbar, over every window</td><td>the bottom of the page</td></tr>
+      <tr><td>Click-through</td><td>everywhere except her body</td><td>the page behind her stays usable</td></tr>
+      <tr><td>Settings</td><td>settings.json</td><td>localStorage, per browser</td></tr>
+      <tr><td>Relay</td><td>ws://</td><td>wss:// via the proxy</td></tr>
+      <tr><td>Sound</td><td>always</td><td>after your first click</td></tr>
+      <tr><td>Talking to her</td><td>—</td><td>type or use the mic; she answers out loud</td></tr>
+      <tr><td>Multi-monitor</td><td>pick a screen</td><td>—</td></tr>
+      <tr><td>Phone</td><td>—</td><td>yes — drag her with a finger; the chart lesson is desktop-only</td></tr>
     </table></div>
   </section>
 
@@ -345,7 +346,7 @@ node test-relay.js                    # 18 checks against a fake firehose, no da
   <a href="#relay">The relay</a>
   <a class="sub" href="#own-relay">Run your own</a>
   <a href="#first-run">The first-run tour</a>
-  <a href="#versions">Desktop · web · extension</a>
+  <a href="#versions">Desktop · web</a>
   <a href="#faq">FAQ</a>
 </aside>
 </div>
@@ -379,6 +380,7 @@ node test-relay.js                    # 18 checks against a fake firehose, no da
 <script src="yui-boot.js"></script>
 <script src="yui-web.js"></script>
 <script src="yui-page.js"></script>
+<script src="yui-chat.js"></script>
 <script>
 (function(){
   var C = window.YUI_CONFIG, $ = function (id) { return document.getElementById(id); };
