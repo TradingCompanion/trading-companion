@@ -1,5 +1,8 @@
 # Yui — Trading Companion
 
+<img width="1500" height="500" alt="image" src="https://github.com/user-attachments/assets/1c9cbe5b-0b81-40e9-8eae-afc5b093143f" />
+
+
 **Yui is an AI agent.**
 
 She is a mind, a voice and a body. The mind is **Claude Opus 5.5**: every answer she gives is
